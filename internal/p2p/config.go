@@ -19,6 +19,9 @@ type Config struct {
 
     // DKG/cluster lock expected to be present (NoopVerifier tolerates empty)
     DKGRequired bool
+
+    // TSS limits (S1 占位)：会话并发上限；0 表示不限制（关闭限流）。
+    MaxTSSSessions int64
 }
 
 // DefaultConfig returns safe defaults compatible with current behaviour.
@@ -29,6 +32,7 @@ func DefaultConfig() Config {
         RateLimit:      0,
         ScoreThreshold: 0,
         DKGRequired:    false,
+        MaxTSSSessions: 0,
     }
 }
 
@@ -42,6 +46,9 @@ func (c Config) Validate(dkgPresent bool) error {
     }
     if c.ScoreThreshold < 0 {
         return errors.New("scoreThreshold must be >= 0")
+    }
+    if c.MaxTSSSessions < 0 {
+        return errors.New("maxTSSSessions must be >= 0")
     }
     // When DKG is required, a verifier must be wired by caller.
     if c.DKGRequired && !dkgPresent {
