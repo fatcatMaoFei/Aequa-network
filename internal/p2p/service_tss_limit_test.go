@@ -12,26 +12,34 @@ import (
 func TestService_TSSLimiter_AllowsThenLimitsThenAllows(t *testing.T) {
     metrics.Reset()
     s := New()
-    // 设置 TSS 并发上限�?1
     cfg := DefaultConfig()
     cfg.MaxTSSSessions = 1
     s.SetConfig(cfg)
-    if err := s.Start(context.Background()); err != nil { t.Fatalf("start: %v", err) }
+    if err := s.Start(context.Background()); err != nil {
+        t.Fatalf("start: %v", err)
+    }
     defer func() { _ = s.Stop(context.Background()) }()
 
-    if !s.TryOpenTSS() { t.Fatalf("first TryOpenTSS should allow") }
-    if s.TryOpenTSS() { t.Fatalf("second TryOpenTSS should be limited") }
+    if !s.TryOpenTSS() {
+        t.Fatalf("first TryOpenTSS should allow")
+    }
+    if s.TryOpenTSS() {
+        t.Fatalf("second TryOpenTSS should be limited")
+    }
     dump := metrics.DumpProm()
     if !strings.Contains(dump, `tss_rate_limited_total{kind="tss_session"} 1`) {
         t.Fatalf("want rate limited metric, got: %s", dump)
     }
-    // 关闭一个会话，稍等指标异步无关但我们直接继�?    s.CloseTSS()
-    // 尝试再次打开，应当允�?    if !s.TryOpenTSS() { t.Fatalf("after close, TryOpenTSS should allow again") }
-    // 检�?gauge 至少存在
+    s.CloseTSS()
+
+    // small wait to allow gauge update path to run
     time.Sleep(10 * time.Millisecond)
+
+    if !s.TryOpenTSS() {
+        t.Fatalf("after close, TryOpenTSS should allow again")
+    }
     dump = metrics.DumpProm()
-    if !strings.Contains(dump, `tss_sessions_open`) {
+    if !strings.Contains(dump, "tss_sessions_open") {
         t.Fatalf("missing tss_sessions_open gauge: %s", dump)
     }
 }
-
