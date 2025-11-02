@@ -18,6 +18,7 @@ type Service struct{
     hook  Hook
     dkgv  dkg.Verifier
     cfg   Config
+    tss   *TSSLimiter
 }
 
 func New() *Service { return &Service{ mgr: NewManager(), gate: AllowAllGate{}, rman: NewResourceManager(DefaultResourceLimits()), hook: LogHook{}, dkgv: dkg.NoopVerifier{}, cfg: DefaultConfig() } }
@@ -68,6 +69,13 @@ func (s *Service) Start(ctx context.Context) error {
     // Apply resource limits from config
     if s.rman == nil || s.rman.limits.MaxConns != s.cfg.MaxConns {
         s.rman = NewResourceManager(ResourceLimits{MaxConns: s.cfg.MaxConns})
+    }
+
+    // Apply TSS session limits (optional)
+    if s.cfg.MaxTSSSessions > 0 {
+        s.tss = NewTSSLimiter(s.cfg.MaxTSSSessions)
+    } else {
+        s.tss = nil
     }
 
     // DKG/cluster-lock verification (fail-fast)
@@ -153,3 +161,12 @@ func (s *Service) Disconnect(id PeerID) {
     s.rman.Close()
     s.hook.OnPeerLeave(string(id))
 }
+
+// TryOpenTSS 尝试打开 TSS 会话（仅当配置了并发上限时生效）。
+func (s *Service) TryOpenTSS() bool {
+    if s.tss == nil { return true }
+    return s.tss.TryOpen()
+}
+
+// CloseTSS 关闭一个 TSS 会话（与 TryOpenTSS 配对）。
+func (s *Service) CloseTSS() { if s.tss != nil { s.tss.Close() } }
