@@ -1,0 +1,7 @@
+# Placeholder bootnodes for public testnet (no real P2P networking in MVP).
+# Format: host:port (reference only).
+node-0:4600
+node-1:4600
+node-2:4600
+node-3:4600
+
