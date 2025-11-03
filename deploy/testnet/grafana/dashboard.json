@@ -1,0 +1,123 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "API Requests by code (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (code)(rate(api_requests_total[5m]))", "legendFormat": "code={{code}}"}
+      ],
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "API Latency avg (ms)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum(rate(api_latency_ms_sum[5m])) / sum(rate(api_latency_ms_count[5m]))", "legendFormat": "avg"}
+      ],
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "Service op avg (ms) by service",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (service)(rate(service_op_ms_sum[5m])) / sum by (service)(rate(service_op_ms_count[5m]))", "legendFormat": "{{service}}"}
+      ],
+      "gridPos": {"x": 0, "y": 7, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "Consensus proc avg (ms) by kind",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (kind)(rate(consensus_proc_ms_sum[5m])) / sum by (kind)(rate(consensus_proc_ms_count[5m]))", "legendFormat": "{{kind}}"}
+      ],
+      "gridPos": {"x": 12, "y": 7, "w": 12, "h": 7}
+    },
+    {
+      "type": "stat",
+      "title": "P2P conns open",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "p2p_conns_open", "legendFormat": "open"}
+      ],
+      "gridPos": {"x": 0, "y": 14, "w": 6, "h": 6}
+    },
+    {
+      "type": "timeseries",
+      "title": "P2P conn attempts by result (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (result)(rate(p2p_conn_attempts_total[5m]))", "legendFormat": "{{result}}"}
+      ],
+      "gridPos": {"x": 6, "y": 14, "w": 18, "h": 6}
+    },
+    {
+      "type": "timeseries",
+      "title": "QBFT verify results (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (result)(rate(qbft_msg_verified_total[5m]))", "legendFormat": "{{result}}"}
+      ],
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "QBFT state transitions by type (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (type)(rate(qbft_state_transitions_total[5m]))", "legendFormat": "{{type}}"}
+      ],
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "State persist errors (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "rate(state_persist_errors_total[5m])", "legendFormat": "errors"}
+      ],
+      "gridPos": {"x": 0, "y": 27, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "TSS sessions by result (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (result)(rate(tss_sessions_total[5m]))", "legendFormat": "{{result}}"}
+      ],
+      "gridPos": {"x": 12, "y": 27, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "TSS limiter & sessions open",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {"expr": "sum by (kind)(rate(tss_rate_limited_total[5m]))", "legendFormat": "limited {{kind}}"},
+        {"expr": "tss_sessions_open", "legendFormat": "open"}
+      ],
+      "gridPos": {"x": 0, "y": 34, "w": 12, "h": 7}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["aequa", "testnet"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "",
+  "title": "Aequa Testnet Overview",
+  "uid": null,
+  "version": 1,
+  "weekStart": ""
+}
+
