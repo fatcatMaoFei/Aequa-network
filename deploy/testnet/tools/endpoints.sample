@@ -1,0 +1,6 @@
+# Monitoring endpoints (host:port) — one per line
+127.0.0.1:4620
+127.0.0.1:4621
+127.0.0.1:4622
+127.0.0.1:4623
+
