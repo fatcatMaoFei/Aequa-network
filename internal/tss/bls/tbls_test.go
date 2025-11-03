@@ -17,3 +17,9 @@ func TestTBLS_Stubs(t *testing.T) {
     }
 }
 
+func TestTBLS_Combine_InsufficientShares(t *testing.T) {
+    if _, err := Combine([]PartialSignature{{}}); err == nil {
+        t.Fatalf("want error for insufficient shares or not implemented")
+    }
+}
+
