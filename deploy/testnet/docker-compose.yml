@@ -1,0 +1,38 @@
+version: "3.9"
+
+# Minimal 4-node testnet for Aequa DVT engine (no BEAST/DFBA; features off).
+# Uses the same image as the root-level compose. Keep metrics/logs dimensions unchanged.
+
+services:
+  node-0:
+    image: aequa-local:latest
+    container_name: aequa-testnet-0
+    command: ["--validator-api","0.0.0.0:4600","--monitoring","0.0.0.0:4620"]
+    ports:
+      - "4600:4600"   # api
+      - "4620:4620"   # metrics
+
+  node-1:
+    image: aequa-local:latest
+    container_name: aequa-testnet-1
+    command: ["--validator-api","0.0.0.0:4600","--monitoring","0.0.0.0:4620"]
+    ports:
+      - "4601:4600"
+      - "4621:4620"
+
+  node-2:
+    image: aequa-local:latest
+    container_name: aequa-testnet-2
+    command: ["--validator-api","0.0.0.0:4600","--monitoring","0.0.0.0:4620"]
+    ports:
+      - "4602:4600"
+      - "4622:4620"
+
+  node-3:
+    image: aequa-local:latest
+    container_name: aequa-testnet-3
+    command: ["--validator-api","0.0.0.0:4600","--monitoring","0.0.0.0:4620"]
+    ports:
+      - "4603:4600"
+      - "4623:4620"
+
