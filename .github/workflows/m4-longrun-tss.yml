@@ -1,0 +1,136 @@
+name: m4-longrun-tss
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 6'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m4-longrun-tss-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.24'
+  CHUNK_MIN: '300'
+
+jobs:
+  tss-fuzz-c1:
+    name: tss-fuzz chunk 1/4 (6h)
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS fuzz (chunk)
+        run: bash ./.github/scripts/go-fuzz-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-fuzz-c1.out || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-fuzz-c1-logs
+          path: tss-fuzz-c1.out
+
+  tss-fuzz-c2:
+    name: tss-fuzz chunk 2/4 (6h)
+    runs-on: ubuntu-latest
+    needs: [tss-fuzz-c1]
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS fuzz (chunk)
+        run: bash ./.github/scripts/go-fuzz-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-fuzz-c2.out || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-fuzz-c2-logs
+          path: tss-fuzz-c2.out
+
+  tss-fuzz-c3:
+    name: tss-fuzz chunk 3/4 (6h)
+    runs-on: ubuntu-latest
+    needs: [tss-fuzz-c2]
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS fuzz (chunk)
+        run: bash ./.github/scripts/go-fuzz-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-fuzz-c3.out || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-fuzz-c3-logs
+          path: tss-fuzz-c3.out
+
+  tss-fuzz-c4:
+    name: tss-fuzz chunk 4/4 (6h)
+    runs-on: ubuntu-latest
+    needs: [tss-fuzz-c3]
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS fuzz (chunk)
+        run: bash ./.github/scripts/go-fuzz-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-fuzz-c4.out || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-fuzz-c4-logs
+          path: tss-fuzz-c4.out
+
+  tss-tests-c1:
+    name: tss-tests chunk 1/2 (6h)
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS tests (chunk)
+        run: bash ./.github/scripts/go-test-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-tests-c1.out -race -run . || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-tests-c1-logs
+          path: tss-tests-c1.out
+
+  tss-tests-c2:
+    name: tss-tests chunk 2/2 (6h)
+    runs-on: ubuntu-latest
+    needs: [tss-tests-c1]
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS tests (chunk)
+        run: bash ./.github/scripts/go-test-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-tests-c2.out -race -run . || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-tests-c2-logs
+          path: tss-tests-c2.out
+
+  tss-e2e:
+    name: tss-e2e (e2e build tag)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS e2e tests
+        run: go test -tags e2e ./internal/tss -count=1 -run . || true
