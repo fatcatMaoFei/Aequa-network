@@ -1,0 +1,83 @@
+name: m4-longrun-tss
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m4-longrun-tss-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.24'
+  CHUNK_MIN: '300'
+
+jobs:
+  tss-fuzz:
+    name: tss-fuzz (conditional)
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS fuzz if package exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if go list ./internal/tss >/dev/null 2>&1; then
+            bash ./.github/scripts/go-fuzz-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-fuzz.out || true
+          else
+            echo "internal/tss not present; skipping fuzz"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-fuzz-logs
+          path: tss-fuzz.out
+
+  tss-tests:
+    name: tss-tests (conditional)
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS tests if package exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if go list ./internal/tss >/dev/null 2>&1; then
+            bash ./.github/scripts/go-test-loop.sh ./internal/tss ${{ env.CHUNK_MIN }} tss-tests.out -race -run . || true
+          else
+            echo "internal/tss not present; skipping tests"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tss-tests-logs
+          path: tss-tests.out
+
+  tss-e2e:
+    name: tss-e2e (conditional)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run TSS e2e if package exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if go list ./internal/tss >/dev/null 2>&1; then
+            go test -tags e2e ./internal/tss -count=1 -run . || true
+          else
+            echo "internal/tss not present; skipping e2e"
+          fi
