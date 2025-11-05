@@ -3,6 +3,7 @@ package dkg
 import (
     "context"
     "sync"
+
     "github.com/zmlAEQ/Aequa-network/pkg/metrics"
 )
 
@@ -13,6 +14,8 @@ type Config struct {
     T int
     // Optional KeyStore for persisting a placeholder KeyShare on finalize.
     Store *KeyStore
+    // Optional SessionStore for resume/retry.
+    Sess *SessionStore
 }
 
 // EngineImpl provides a minimal in-memory DKG state machine to exercise a closed loop
@@ -30,6 +33,24 @@ type session struct {
     reveal  map[string]struct{}
     ack     map[string]struct{}
     done    bool
+}
+
+func (e *EngineImpl) snapshot(s *session) sessionState {
+    toSlice := func(m map[string]struct{}) []string {
+        arr := make([]string, 0, len(m))
+        for k := range m { arr = append(arr, k) }
+        return arr
+    }
+    return sessionState{Epoch: s.epoch, Propose: toSlice(s.propose), Commit: toSlice(s.commit), Reveal: toSlice(s.reveal), Ack: toSlice(s.ack), Done: s.done}
+}
+
+func (e *EngineImpl) restore(st sessionState) *session {
+    toMap := func(a []string) map[string]struct{} {
+        m := map[string]struct{}{}
+        for _, k := range a { m[k] = struct{}{} }
+        return m
+    }
+    return &session{epoch: st.Epoch, propose: toMap(st.Propose), commit: toMap(st.Commit), reveal: toMap(st.Reveal), ack: toMap(st.Ack), done: st.Done}
 }
 
 // NewEngine constructs a new minimal DKG engine.
@@ -75,12 +96,31 @@ func (e *EngineImpl) OnMessage(msg Message) (bool, error) {
             metrics.Inc("tss_sessions_total", map[string]string{"result": "ok"})
         }
     case MsgComplaint:
-        // No state advance; could record a metric for complaints via tss_msgs_total above
-        // Keep as no-op transition
+        // Complaint triggers epoch bump and phase reset (retry)
+        s.epoch++
+        s.propose = map[string]struct{}{}
+        s.commit = map[string]struct{}{}
+        s.reveal = map[string]struct{}{}
+        s.ack = map[string]struct{}{}
     default:
         // Unknown types ignored
     }
+    // persist session snapshot if store provided
+    if e.cfg.Sess != nil {
+        _ = e.cfg.Sess.Save(msg.SessionID, e.snapshot(s))
+    }
     e.mu.Unlock()
     return advanced, nil
+}
+
+// Resume loads a session state from store (if provided) into memory.
+func (e *EngineImpl) Resume(id string) error {
+    if e.cfg.Sess == nil { return ErrSessNotFound }
+    st, err := e.cfg.Sess.Load(id)
+    if err != nil { return err }
+    e.mu.Lock()
+    e.sess[id] = e.restore(st)
+    e.mu.Unlock()
+    return nil
 }
 
