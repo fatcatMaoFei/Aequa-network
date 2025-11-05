@@ -81,3 +81,34 @@ func TestDKG_PersistOptionally(t *testing.T) {
     }
 }
 
+
+func TestDKG_Complaint_TriggersRetryAndFinalizeAfter(t *testing.T) {
+    dir := t.TempDir()
+    store := NewKeyStore(filepath.Join(dir, "tss_keyshare.dat"))
+    sess := NewSessionStore(dir)
+    eng := NewEngine(Config{N:4, T:2, Store: store, Sess: sess})
+    sid := "sr"
+    // progress then complaint -> epoch++ and reset
+    _, _ = eng.OnMessage(Message{Type: MsgPropose, SessionID: sid, Epoch: 1, From: "P1"})
+    _, _ = eng.OnMessage(Message{Type: MsgCommit, SessionID: sid, Epoch: 1, From: "P1"})
+    _, _ = eng.OnMessage(Message{Type: MsgComplaint, SessionID: sid, Epoch: 1, From: "P2"})
+    // new epoch finalize with two ACKs
+    _, _ = eng.OnMessage(Message{Type: MsgAck, SessionID: sid, Epoch: 2, From: "P1"})
+    adv, _ := eng.OnMessage(Message{Type: MsgAck, SessionID: sid, Epoch: 2, From: "P2"})
+    if !adv { t.Fatalf("want advance after retry") }
+}
+
+func TestDKG_Resume_FromSessionStore(t *testing.T) {
+    dir := t.TempDir()
+    store := NewKeyStore(filepath.Join(dir, "tss_keyshare.dat"))
+    sess := NewSessionStore(dir)
+    sid := "sx"
+    // first engine writes partial state (one ack)
+    eng := NewEngine(Config{N:3, T:2, Store: store, Sess: sess})
+    _, _ = eng.OnMessage(Message{Type: MsgAck, SessionID: sid, Epoch: 1, From: "P1"})
+    // resume into new engine
+    eng2 := NewEngine(Config{N:3, T:2, Store: store, Sess: sess})
+    if err := eng2.Resume(sid); err != nil { t.Fatalf("resume: %v", err) }
+    adv, _ := eng2.OnMessage(Message{Type: MsgAck, SessionID: sid, Epoch: 1, From: "P2"})
+    if !adv { t.Fatalf("want finalize after resume") }
+}
