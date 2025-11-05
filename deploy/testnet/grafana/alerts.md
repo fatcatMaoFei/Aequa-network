@@ -54,3 +54,14 @@ TSS gray rollout watch (add if enabled)
   for: 0m
   labels: severity=info
   annotations: summary="TSS sessions open"
+SLO: TSS timeouts <1%
+- expr: (sum(rate(tss_sessions_total{result="timeout"}[10m])) / sum(rate(tss_sessions_total[10m]))) > 0.01
+  for: 10m
+  labels: severity=warn
+  annotations: summary: "TSS session timeouts exceed 1%"
+
+SLO: TSS service avg latency
+- expr: (sum(rate(service_op_ms_sum{service="tss"}[5m])) / sum(rate(service_op_ms_count{service="tss"}[5m]))) > 200
+  for: 10m
+  labels: severity=warn
+  annotations: summary: "TSS service avg >200ms"

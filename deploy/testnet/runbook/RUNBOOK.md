@@ -88,3 +88,10 @@ Gray Rollout (TSS behind flag)
 - Observe dashboards: tss_sessions_open, tss_rate_limited_total, service_op_ms{service="tss"}
 - If stable, roll TSS to remaining nodes (one by one) using rolling_upgrade.sh and adding --enable-tss to command.
 - To disable, restart container without the flag (or use docker-compose.yml baseline).
+SLO & Benchmarks (TSS)
+
+- Benchmarks (manual):
+  ./deploy/testnet/tools/tss_bench.sh  # runs -tags blst benches under internal/tss/core/bls381
+  Record p50/p95 from output (ns/op) as baseline; attach to release notes.
+- Dashboards: ensure panel "TSS service op avg (ms)" is visible after enabling TSS.
+- Alerts (suggested): timeouts >1% for 10m; tss service avg >200ms for 10m.
