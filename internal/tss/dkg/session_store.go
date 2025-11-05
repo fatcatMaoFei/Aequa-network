@@ -1,7 +1,6 @@
 package dkg
 
 import (
-    "context"
     "encoding/binary"
     "encoding/json"
     "errors"
