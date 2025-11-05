@@ -77,3 +77,14 @@ Change Management
 - Never change metrics/log labels in this baseline. Only add new metric families when needed.
 - Use small PRs and feature flags (default off). Revert by disabling features or rolling back images.
 
+
+Gray Rollout (TSS behind flag)
+
+- Default off. To enable on a single node (canary):
+  docker compose -f deploy/testnet/docker-compose.yml stop node-0 && \
+  docker run -d --name aequa-testnet-canary \
+    -p 4600:4600 -p 4620:4620 aequa-local:latest \
+    --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620 --enable-tss
+- Observe dashboards: tss_sessions_open, tss_rate_limited_total, service_op_ms{service="tss"}
+- If stable, roll TSS to remaining nodes (one by one) using rolling_upgrade.sh and adding --enable-tss to command.
+- To disable, restart container without the flag (or use docker-compose.yml baseline).

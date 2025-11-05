@@ -44,3 +44,13 @@ Note
 - Keep label sets unchanged; use only existing families and labels.
 - These rules are suggestions for ops; do not commit to remote if policy forbids.
 
+
+TSS gray rollout watch (add if enabled)
+- expr: sum(rate(tss_rate_limited_total[5m])) > 0
+  for: 10m
+  labels: severity=info
+  annotations: summary="TSS limiter activity observed"
+- expr: tss_sessions_open > 0
+  for: 0m
+  labels: severity=info
+  annotations: summary="TSS sessions open"
