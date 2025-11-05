@@ -56,6 +56,10 @@ func writeSess(path string, st sessionState) error {
     if _, err = f.Write(b); err != nil { _=f.Close(); return err }
     if err = f.Sync(); err != nil { _=f.Close(); return err }
     if err = f.Close(); err != nil { return err }
+    // keep previous as .bak if present
+    if _, statErr := os.Stat(path); statErr == nil {
+        _ = os.Rename(path, path+".bak")
+    }
     if err = os.Rename(tmp, path); err != nil { return err }
     return nil
 }
