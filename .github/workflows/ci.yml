@@ -9,6 +9,7 @@ permissions:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
 jobs:
   verify-bom:
     runs-on: ubuntu-latest
@@ -26,6 +27,15 @@ jobs:
             fi
           done < <(git ls-files -z '*.go')
           test $err -eq 0
+
+  dep-whitelist:
+    runs-on: ubuntu-latest
+    needs: [verify-bom]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency whitelist check
+        run: bash ./scripts/dep-whitelist.sh
+
   lint:
     runs-on: ubuntu-latest
     needs: [verify-bom]
@@ -39,6 +49,7 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
+
   build-test:
     runs-on: ubuntu-latest
     needs: [lint]
@@ -83,6 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           go test ./internal/consensus/qbft -count=1
+
   security-snyk:
     runs-on: ubuntu-latest
     needs: [build-test, qbft-tests]
