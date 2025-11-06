@@ -25,3 +25,10 @@ Notes
 - For chaos/adversary tests, prefer the root-level docker-compose.yml.
 - Keep this file local-only; do not modify metrics/logging dimensions.
 
+Optional: KeyShare encryption
+
+- Default off. To enable at-rest encryption for KeyShare storage, set environment variables on the node container:
+  - `AEQUA_TSS_KEYSTORE_ENCRYPT=1`
+  - Provide a 32-byte key with either `AEQUA_TSS_KEYSTORE_KEY` (hex) or `AEQUA_TSS_KEYSTORE_KEY_FILE` (path to raw bytes).
+  - Optional best-effort memory wipe: `AEQUA_TSS_ZEROIZE=1`.
+- Risks: losing the key makes current KeyShare unreadable; `.bak` may also be encrypted depending on timing.
