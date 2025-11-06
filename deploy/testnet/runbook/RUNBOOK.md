@@ -95,16 +95,3 @@ SLO & Benchmarks (TSS)
   Record p50/p95 from output (ns/op) as baseline; attach to release notes.
 - Dashboards: ensure panel "TSS service op avg (ms)" is visible after enabling TSS.
 - Alerts (suggested): timeouts >1% for 10m; tss service avg >200ms for 10m.
-
-KeyShare Encryption (optional)
-
-- Default off. Enable per-node via environment variables (no metric/label changes):
-  - `AEQUA_TSS_KEYSTORE_ENCRYPT=1`
-  - Provide a 32-byte key via one of:
-    - `AEQUA_TSS_KEYSTORE_KEY` (hex string, 64 chars)
-    - `AEQUA_TSS_KEYSTORE_KEY_FILE` (path to raw 32 bytes)
-  - Optional best-effort memory wipe: `AEQUA_TSS_ZEROIZE=1`
-- Risks & notes:
-  - Losing the key makes the current KeyShare unreadable; `.bak` fallback may still be encrypted depending on prior writes.
-  - AES-256-GCM with random nonce (12B) is used; on-disk format is flagged, backward-compatible reader supports both plaintext and encrypted files.
-  - This feature is behind configuration only; disabled by default to keep CI/builds unchanged.
