@@ -10,9 +10,10 @@ import (
     "github.com/zmlAEQ/Aequa-network/pkg/metrics"
     qbft "github.com/zmlAEQ/Aequa-network/internal/consensus/qbft"
     "github.com/zmlAEQ/Aequa-network/internal/state"
+    "os"
 )
 
-type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor; wal *qbft.WAL }
+type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor; wal *qbft.WAL; lastWAL qbft.Message; tss TSSAggVerifier; enableTSSSync bool }
 
 func New() *Service { return &Service{} }
 func NewWithSub(sub bus.Subscriber) *Service { return &Service{sub: sub} }
@@ -30,6 +31,13 @@ func (s *Service) SetProcessor(p qbft.Processor) { s.st = p }
 // SetWAL allows injecting a qbft WAL implementation (optional).
 func (s *Service) SetWAL(w *qbft.WAL) { s.wal = w }
 
+// TSSAggVerifier provides the minimal aggregate signature verification API.
+// It matches the needed method from internal/tss/api without importing it here.
+type TSSAggVerifier interface{ VerifyAgg(pkGroup []byte, msg []byte, aggSig []byte) bool }
+
+// SetTSSVerifier injects a TSS aggregate signature verifier (optional).
+func (s *Service) SetTSSVerifier(v TSSAggVerifier) { s.tss = v }
+
 func (s *Service) Start(ctx context.Context) error {
     if s.sub == nil {
         logger.Info("consensus start (stub)")
@@ -38,8 +46,18 @@ func (s *Service) Start(ctx context.Context) error {
     if s.v == nil { s.v = qbft.NewBasicVerifierWithPolicy(qbft.DefaultPolicy()) }
     if s.store == nil { s.store = state.NewMemoryStore() }
     if s.st == nil { s.st = &qbft.State{} }
+    s.enableTSSSync = os.Getenv("AEQUA_ENABLE_TSS_STATE_SYNC") == "1"
     // Start E2E attack/testing endpoint when built with tag "e2e" (no-op otherwise).
     startE2E(s)
+    // Try recover last vote intent from WAL (best-effort guard)
+    if s.wal != nil {
+        if last, err := s.wal.LastIntent(); err == nil {
+            s.lastWAL = last
+            logger.InfoJ("qbft_wal_guard", map[string]any{"result":"ok", "height": last.Height, "round": last.Round})
+        } else {
+            logger.InfoJ("qbft_wal_guard", map[string]any{"result":"miss"})
+        }
+    }
     if ls, err := s.store.LoadLastState(ctx); err != nil {
         logger.InfoJ("consensus_state", map[string]any{"op":"load", "result":"miss", "err": err.Error(), "trace_id": ""})
     } else {
@@ -63,11 +81,22 @@ func (s *Service) Start(ctx context.Context) error {
                     if s.wal != nil && (msg.Type == qbft.MsgPrepare || msg.Type == qbft.MsgCommit) {
                         _ = s.wal.AppendIntent(msg)
                     }
-                    _ = s.st.Process(msg)
-                    if err2 := s.store.SaveLastState(ctx, state.LastState{Height: msg.Height, Round: msg.Round}); err2 != nil {
-                        logger.ErrorJ("consensus_state", map[string]any{"op":"save", "result":"error", "err": err2.Error(), "trace_id": ev.TraceID})
-                    } else {
-                        logger.InfoJ("consensus_state", map[string]any{"op":"save", "result":"ok", "height": msg.Height, "round": msg.Round, "trace_id": ev.TraceID})
+                    // Guard against processing intents older than last WAL entry (best-effort)
+                    allowed := true
+                    if (msg.Type == qbft.MsgPrepare || msg.Type == qbft.MsgCommit) && s.lastWAL.Type != "" {
+                        if msg.Height < s.lastWAL.Height || (msg.Height == s.lastWAL.Height && msg.Round < s.lastWAL.Round) {
+                            allowed = false
+                            metrics.Inc("qbft_wal_guard_drops_total", nil)
+                            logger.InfoJ("qbft_wal_guard", map[string]any{"result":"drop", "height": msg.Height, "round": msg.Round, "last_h": s.lastWAL.Height, "last_r": s.lastWAL.Round})
+                        }
+                    }
+                    if allowed {
+                        _ = s.st.Process(msg)
+                        if err2 := s.store.SaveLastState(ctx, state.LastState{Height: msg.Height, Round: msg.Round}); err2 != nil {
+                            logger.ErrorJ("consensus_state", map[string]any{"op":"save", "result":"error", "err": err2.Error(), "trace_id": ev.TraceID})
+                        } else {
+                            logger.InfoJ("consensus_state", map[string]any{"op":"save", "result":"ok", "height": msg.Height, "round": msg.Round, "trace_id": ev.TraceID})
+                        }
                     }
                 }
                 durMs := time.Since(begin).Milliseconds()
@@ -85,5 +114,25 @@ func (s *Service) Start(ctx context.Context) error {
 func (s *Service) Stop(ctx context.Context) error  { logger.Info("consensus stop (stub)"); return nil }
 
 var _ lifecycle.Service = (*Service)(nil)
+
+// VerifyHeaderWithTSS verifies a header blob and aggregate signature under the
+// provided group public key via the injected TSS verifier. It is behind a soft
+// enable flag (AEQUA_ENABLE_TSS_STATE_SYNC). Metrics family is additive.
+func (s *Service) VerifyHeaderWithTSS(pkGroup, header, sig []byte) bool {
+    if !s.enableTSSSync || s.tss == nil {
+        metrics.Inc("state_sync_verified_total", map[string]string{"result":"disabled"})
+        logger.InfoJ("consensus_state_sync", map[string]any{"result":"disabled"})
+        return false
+    }
+    ok := s.tss.VerifyAgg(pkGroup, header, sig)
+    if ok {
+        metrics.Inc("state_sync_verified_total", map[string]string{"result":"ok"})
+        logger.InfoJ("consensus_state_sync", map[string]any{"result":"ok"})
+    } else {
+        metrics.Inc("state_sync_verified_total", map[string]string{"result":"fail"})
+        logger.ErrorJ("consensus_state_sync", map[string]any{"result":"fail"})
+    }
+    return ok
+}
 
 
