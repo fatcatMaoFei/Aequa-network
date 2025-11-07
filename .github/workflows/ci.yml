@@ -95,6 +95,35 @@ jobs:
           set -euo pipefail
           go test ./internal/consensus/qbft -count=1
 
+  tss-coverage:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Run coverage for internal/tss
+        run: |
+          set -euo pipefail
+          pkgs=$(go list ./internal/tss/... | wc -l)
+          if [ "$pkgs" -eq 0 ]; then
+            echo "no tss packages; skip"; exit 0
+          fi
+          go test ./internal/tss/... -coverprofile=tss.cover -covermode=atomic -count=1
+          go tool cover -func=tss.cover | tee tss.cover.func
+      - name: Enforce coverage threshold (tss)
+        env:
+          COVERAGE_MIN_TSS: ${{ vars.COVERAGE_MIN_TSS }}
+        run: |
+          set -euo pipefail
+          total=$(awk '/total:/ {print $3}' tss.cover.func | tail -n1)
+          pct=${total%*%}
+          thr_env=${COVERAGE_MIN_TSS:-70}
+          thr=$(awk -v e="$thr_env" 'BEGIN{t=e+0; if (t<70) t=70; print t}')
+          echo "tss_coverage=$pct% (threshold=$thr%)" | tee -a $GITHUB_STEP_SUMMARY
+          awk -v p=$pct -v t=$thr 'BEGIN{ exit (p+0 < t+0) ? 1 : 0 }'
+
   security-snyk:
     runs-on: ubuntu-latest
     needs: [build-test, qbft-tests]

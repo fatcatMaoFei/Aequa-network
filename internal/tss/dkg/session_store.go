@@ -97,8 +97,15 @@ func (s *SessionStore) Save(id string, st sessionState) error {
 
 func (s *SessionStore) Load(id string) (sessionState, error) {
     s.mu.Lock(); defer s.mu.Unlock()
-    st, err := readSess(s.pathFor(id))
-    if err != nil { metrics.Inc("tss_recovery_total", map[string]string{"result":"fail"}); return sessionState{}, ErrSessNotFound }
-    metrics.Inc("tss_recovery_total", map[string]string{"result":"ok"})
-    return st, nil
+    p := s.pathFor(id)
+    if st, err := readSess(p); err == nil {
+        metrics.Inc("tss_recovery_total", map[string]string{"result":"ok"})
+        return st, nil
+    }
+    if st, err := readSess(p+".bak"); err == nil {
+        metrics.Inc("tss_recovery_total", map[string]string{"result":"fallback"})
+        return st, nil
+    }
+    metrics.Inc("tss_recovery_total", map[string]string{"result":"fail"})
+    return sessionState{}, ErrSessNotFound
 }
