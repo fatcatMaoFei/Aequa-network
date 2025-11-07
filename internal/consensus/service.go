@@ -2,6 +2,8 @@ package consensus
 
 import (
     "context"
+    "crypto/sha256"
+    "encoding/json"
     "time"
 
     "github.com/zmlAEQ/Aequa-network/pkg/bus"
@@ -9,11 +11,12 @@ import (
     "github.com/zmlAEQ/Aequa-network/pkg/logger"
     "github.com/zmlAEQ/Aequa-network/pkg/metrics"
     qbft "github.com/zmlAEQ/Aequa-network/internal/consensus/qbft"
+    pl "github.com/zmlAEQ/Aequa-network/internal/payload"
     "github.com/zmlAEQ/Aequa-network/internal/state"
     "os"
 )
 
-type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor; wal *qbft.WAL; lastWAL qbft.Message; tss TSSAggVerifier; enableTSSSync bool }
+type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor; wal *qbft.WAL; lastWAL qbft.Message; tss TSSAggVerifier; enableTSSSync bool; enableBuilder bool; pool *pl.Container; policy pl.BuilderPolicy; lastBlock map[uint64]map[uint64]pl.StandardBlock; enableTSSSign bool; signer TSSSigner }
 
 func New() *Service { return &Service{} }
 func NewWithSub(sub bus.Subscriber) *Service { return &Service{sub: sub} }
@@ -38,6 +41,18 @@ type TSSAggVerifier interface{ VerifyAgg(pkGroup []byte, msg []byte, aggSig []by
 // SetTSSVerifier injects a TSS aggregate signature verifier (optional).
 func (s *Service) SetTSSVerifier(v TSSAggVerifier) { s.tss = v }
 
+// TSSSigner is a minimal signer interface to avoid importing the TSS API here.
+type TSSSigner interface{ Sign(ctx context.Context, height, round uint64, msg []byte) ([]byte, error) }
+
+// SetPayloadContainer wires a pluggable mempool container into consensus (optional).
+func (s *Service) SetPayloadContainer(c *pl.Container) { s.pool = c }
+
+// SetBuilderPolicy defines deterministic selection order/limits.
+func (s *Service) SetBuilderPolicy(p pl.BuilderPolicy) { s.policy = p }
+
+// SetTSSSigner injects an optional TSS signer used at commit when enabled.
+func (s *Service) SetTSSSigner(si TSSSigner) { s.signer = si }
+
 func (s *Service) Start(ctx context.Context) error {
     if s.sub == nil {
         logger.Info("consensus start (stub)")
@@ -47,6 +62,9 @@ func (s *Service) Start(ctx context.Context) error {
     if s.store == nil { s.store = state.NewMemoryStore() }
     if s.st == nil { s.st = &qbft.State{} }
     s.enableTSSSync = os.Getenv("AEQUA_ENABLE_TSS_STATE_SYNC") == "1"
+    s.enableBuilder = os.Getenv("AEQUA_ENABLE_BUILDER") == "1"
+    s.enableTSSSign = os.Getenv("AEQUA_ENABLE_TSS_SIGN") == "1"
+    if s.lastBlock == nil { s.lastBlock = make(map[uint64]map[uint64]pl.StandardBlock) }
     // Start E2E attack/testing endpoint when built with tag "e2e" (no-op otherwise).
     startE2E(s)
     // Try recover last vote intent from WAL (best-effort guard)
@@ -81,6 +99,18 @@ func (s *Service) Start(ctx context.Context) error {
                     if s.wal != nil && (msg.Type == qbft.MsgPrepare || msg.Type == qbft.MsgCommit) {
                         _ = s.wal.AppendIntent(msg)
                     }
+                    // Behind-flag builder: prepare deterministic block for this coordinate
+                    if s.enableBuilder && s.pool != nil {
+                        hdr := pl.BlockHeader{Height: msg.Height, Round: msg.Round}
+                        blk := pl.PrepareProposal(s.pool, hdr, s.policy)
+                        if err := pl.ProcessProposal(blk, s.policy); err == nil {
+                            if s.lastBlock[msg.Height] == nil { s.lastBlock[msg.Height] = make(map[uint64]pl.StandardBlock) }
+                            s.lastBlock[msg.Height][msg.Round] = blk
+                            logger.InfoJ("consensus_builder", map[string]any{"result":"ok", "height": msg.Height, "round": msg.Round, "items": len(blk.Items)})
+                        } else {
+                            logger.ErrorJ("consensus_builder", map[string]any{"result":"reject", "err": err.Error(), "height": msg.Height, "round": msg.Round})
+                        }
+                    }
                     // Guard against processing intents older than last WAL entry (best-effort)
                     allowed := true
                     if (msg.Type == qbft.MsgPrepare || msg.Type == qbft.MsgCommit) && s.lastWAL.Type != "" {
@@ -92,6 +122,21 @@ func (s *Service) Start(ctx context.Context) error {
                     }
                     if allowed {
                         _ = s.st.Process(msg)
+                        if s.enableTSSSign && s.signer != nil && msg.Type == qbft.MsgCommit {
+                            if row, ok := s.lastBlock[msg.Height]; ok {
+                                if blk, ok2 := row[msg.Round]; ok2 {
+                                    b, _ := json.Marshal(blk)
+                                    sum := sha256.Sum256(b)
+                                    if _, err := s.signer.Sign(ctx, msg.Height, msg.Round, sum[:]); err != nil {
+                                        metrics.Inc("block_sign_total", map[string]string{"result":"error"})
+                                        logger.ErrorJ("consensus_block", map[string]any{"op":"sign", "result":"error", "err": err.Error(), "height": msg.Height, "round": msg.Round})
+                                    } else {
+                                        metrics.Inc("block_sign_total", map[string]string{"result":"ok"})
+                                        logger.InfoJ("consensus_block", map[string]any{"op":"sign", "result":"ok", "height": msg.Height, "round": msg.Round})
+                                    }
+                                }
+                            }
+                        }
                         if err2 := s.store.SaveLastState(ctx, state.LastState{Height: msg.Height, Round: msg.Round}); err2 != nil {
                             logger.ErrorJ("consensus_state", map[string]any{"op":"save", "result":"error", "err": err2.Error(), "trace_id": ev.TraceID})
                         } else {
