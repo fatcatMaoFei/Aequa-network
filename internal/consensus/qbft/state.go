@@ -213,3 +213,11 @@ func (s *State) OnTimeout() Message {
     metrics.Inc("qbft_timeouts_total", map[string]string{"phase": phase})
     return Message{From: "self", Height: s.Height, Round: s.Round + 1, Type: MsgViewChange, ID: "vc"}
 }
+
+// Restore sets the state coordinates to the given height/round. It is used by
+// recovery paths to fast-forward in-memory coordinates after restart.
+func (s *State) Restore(height, round uint64) {
+    s.Height = height
+    s.Round = round
+}
+
