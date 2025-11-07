@@ -8,6 +8,10 @@ cd "$ROOT"
 
 ALLOW=(
   "github.com/supranational/blst"
+  # P2P (behind build tag 'p2p')
+  "github.com/libp2p/go-libp2p"
+  "github.com/libp2p/go-libp2p-pubsub"
+  "github.com/multiformats/go-multiaddr"
 )
 
 if [ ! -f go.mod ]; then
