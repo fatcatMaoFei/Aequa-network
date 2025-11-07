@@ -95,6 +95,16 @@ func (s *Service) Start(ctx context.Context) error {
         for {
             select {
             case ev := <-s.sub:
+                // Handle transaction gossip (if any) before consensus mapping.
+                if ev.Kind == bus.KindTx {
+                    if s.pool != nil {
+                        if plAny, ok := ev.Body.(pl.Payload); ok && plAny != nil {
+                            _ = s.pool.Add(plAny)
+                        }
+                    }
+                    // Proceed to next event; tx does not map to qbft.
+                    continue
+                }
                 // Count the event as received
                 metrics.Inc("consensus_events_total", map[string]string{"kind": string(ev.Kind)})
 

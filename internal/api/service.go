@@ -14,9 +14,14 @@ import (
     "github.com/zmlAEQ/Aequa-network/pkg/logger"
     "github.com/zmlAEQ/Aequa-network/pkg/metrics"
     "github.com/zmlAEQ/Aequa-network/pkg/trace"
+    payload "github.com/zmlAEQ/Aequa-network/internal/payload"
+    wire "github.com/zmlAEQ/Aequa-network/internal/p2p/wire"
+    "os"
 )
 
-type Service struct{ addr string; srv *http.Server; onPublish func(ctx context.Context, payload []byte) error; upstream string }
+type txBroadcaster interface{ BroadcastTx(ctx context.Context, tx payload.Payload) error }
+
+type Service struct{ addr string; srv *http.Server; onPublish func(ctx context.Context, payload []byte) error; upstream string; txb txBroadcaster; onPublishTx func(ctx context.Context, pl payload.Payload) }
 
 func New(addr string, onPublish func(ctx context.Context, payload []byte) error, upstream string) *Service {
     return &Service{addr: addr, onPublish: onPublish, upstream: upstream}
@@ -29,6 +34,9 @@ func (s *Service) Start(ctx context.Context) error {
     mux := http.NewServeMux()
     mux.HandleFunc("/health", s.handleHealth)
     mux.HandleFunc("/v1/duty", s.handleDuty)
+    if os.Getenv("AEQUA_ENABLE_TX_API") == "1" {
+        mux.HandleFunc("/v1/tx/plain", s.handleTxPlain)
+    }
     mux.HandleFunc("/", s.proxy)
     s.srv = &http.Server{ Addr: s.addr, Handler: mux }
     go func() {
@@ -209,3 +217,46 @@ func (s *Service) handleHealth(w http.ResponseWriter, r *http.Request) {
         "trace_id": traceID(r),
     })
 }
+// SetTxBroadcaster injects an optional P2P broadcaster for tx gossip (behind flag).
+func (s *Service) SetTxBroadcaster(b txBroadcaster) { s.txb = b }
+
+// handleTxPlain accepts a plaintext_v1 transaction and optionally gossips it.
+func (s *Service) handleTxPlain(w http.ResponseWriter, r *http.Request) {
+    start := time.Now()
+    tid := traceID(r)
+    route := "/v1/tx/plain"
+    if r.Method != http.MethodPost {
+        s.logAPI(w, route, http.StatusMethodNotAllowed, start, tid, "error", "method not allowed")
+        return
+    }
+    if r.Body == nil {
+        s.logAPI(w, route, http.StatusBadRequest, start, tid, "error", "empty body")
+        return
+    }
+    b, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+    if err != nil {
+        s.logAPI(w, route, http.StatusBadRequest, start, tid, "error", "read error")
+        return
+    }
+    var wtx wire.PlaintextTx
+    if err := json.Unmarshal(b, &wtx); err != nil {
+        s.logAPI(w, route, http.StatusBadRequest, start, tid, "error", "invalid json")
+        return
+    }
+    pl := wtx.ToInternal()
+    if pl == nil || pl.Validate() != nil {
+        s.logAPI(w, route, http.StatusBadRequest, start, tid, "error", "invalid tx")
+        return
+    }
+    // Publish to bus for local mempool ingest (structured payload)
+    if s.onPublishTx != nil { s.onPublishTx(trace.WithTraceID(r.Context(), tid), pl) }
+    // Optionally broadcast via P2P
+    if s.txb != nil { _ = s.txb.BroadcastTx(r.Context(), pl) }
+    dur := time.Since(start)
+    metrics.Inc("api_requests_total", map[string]string{"route":route,"code":"202"})
+    metrics.ObserveSummary("api_latency_ms", map[string]string{"route":route}, float64(dur.Milliseconds()))
+    logger.InfoJ("api_request", map[string]any{"route": route, "code": 202, "bytes": len(b), "latency_ms": dur.Milliseconds(), "result":"accepted", "trace_id": tid})
+    w.WriteHeader(http.StatusAccepted)
+}
+// SetTxPublisher allows wiring a callback to publish validated txs to the bus.
+func (s *Service) SetTxPublisher(fn func(ctx context.Context, pl payload.Payload)) { s.onPublishTx = fn }
