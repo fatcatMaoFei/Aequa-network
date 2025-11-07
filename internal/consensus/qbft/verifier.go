@@ -100,7 +100,7 @@ func (v *BasicVerifier) SetTypeRoundMax(t Type, max uint64) {
 }
 
 func validType(t Type) bool {
-    switch t { case MsgPreprepare, MsgPrepare, MsgCommit: return true }
+    switch t { case MsgPreprepare, MsgPrepare, MsgCommit, MsgViewChange, MsgNewView: return true }
     return false
 }
 
