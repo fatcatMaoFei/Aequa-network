@@ -18,6 +18,8 @@ type State struct {
     proposalID   string
     prepareVotes map[string]struct{} // by From
     commitVotes  map[string]struct{} // by From
+    // View-change aggregation per target round
+    viewVotes map[uint64]map[string]struct{}
 }
 
 // Processor defines the minimal interface for driving state transitions.
@@ -132,6 +134,37 @@ func (s *State) Process(msg Message) error {
             s.Phase = "commit"
             changed = true
         }
+    case MsgViewChange:
+        // Aggregate view-change votes for the target round (usually current+1)
+        if s.viewVotes == nil { s.viewVotes = make(map[uint64]map[string]struct{}) }
+        bucket := s.viewVotes[msg.Round]
+        if bucket == nil { bucket = map[string]struct{}{}; s.viewVotes[msg.Round] = bucket }
+        if _, ok = bucket[msg.From]; ok {
+            goto END
+        }
+        bucket[msg.From] = struct{}{}
+        // Minimal threshold 2 to advance the round
+        if len(bucket) >= 2 && msg.Round > s.Round {
+            s.Round = msg.Round
+            // reset phase and votes on view change
+            s.Phase = ""
+            s.proposalID = ""
+            s.prepareVotes = nil
+            s.commitVotes = nil
+            changed = true
+            metrics.Inc("qbft_view_changes_total", nil)
+        }
+    case MsgNewView:
+        // Placeholder: accept new-view as authoritative round update
+        if msg.Round > s.Round {
+            s.Round = msg.Round
+            s.Phase = ""
+            s.proposalID = ""
+            s.prepareVotes = nil
+            s.commitVotes = nil
+            changed = true
+            metrics.Inc("qbft_view_changes_total", nil)
+        }
     default:
         // Keep previous phase for unknown types; still record observability.
     }
@@ -160,4 +193,13 @@ END:
     }
     metrics.Inc("qbft_state_transitions_total", map[string]string{"type": string(msg.Type)})
     return nil
+}
+
+// OnTimeout records a timeout for the current phase and returns a local view-change
+// message targeting the next round. Callers may broadcast the returned message.
+func (s *State) OnTimeout() Message {
+    phase := s.Phase
+    if phase == "" { phase = "idle" }
+    metrics.Inc("qbft_timeouts_total", map[string]string{"phase": phase})
+    return Message{From: "self", Height: s.Height, Round: s.Round + 1, Type: MsgViewChange, ID: "vc"}
 }
