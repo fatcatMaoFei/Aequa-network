@@ -1,4 +1,4 @@
-package qbft
+﻿package qbft
 
 import (
     "fmt"
@@ -213,3 +213,34 @@ func (s *State) OnTimeout() Message {
     metrics.Inc("qbft_timeouts_total", map[string]string{"phase": phase})
     return Message{From: "self", Height: s.Height, Round: s.Round + 1, Type: MsgViewChange, ID: "vc"}
 }
+
+// Restore sets the state coordinates to the given height/round. It is used by
+// recovery paths to fast-forward in-memory coordinates after restart.
+func (s *State) Restore(height, round uint64) {
+    s.Height = height
+    s.Round = round
+}
+<<<<<<< HEAD
+// OnTimeout records a timeout for the current phase and returns a local view-change
+// message targeting the next round. Callers may broadcast the returned message.
+func (s *State) OnTimeout() Message {
+    phase := s.Phase
+    if phase == "" { phase = "idle" }
+    metrics.Inc("qbft_timeouts_total", map[string]string{"phase": phase})
+    return Message{From: "self", Height: s.Height, Round: s.Round + 1, Type: MsgViewChange, ID: "vc"}
+=======
+// Restore sets the state coordinates to the given height/round. It is used by
+// recovery paths to fast-forward in-memory coordinates after restart.
+func (s *State) Restore(height, round uint64) {
+    s.Height = height
+    s.Round = round
+>>>>>>> e709ed1 (qbft(wal-replay): fast-forward state on start if WAL last intent is ahead of stored last state; expose State.Restore())
+}
+
+// Restore sets the state coordinates to the given height/round. It is used by
+// recovery paths to fast-forward in-memory coordinates after restart.
+func (s *State) Restore(height, round uint64) {
+    s.Height = height
+    s.Round = round
+}
+
