@@ -73,6 +73,13 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
         _ = connectOnce(ctx, h, b)
     }
 
+    // Log self peer id and listen addrs for operators to copy into bootnodes.txt
+    if h != nil {
+        for _, a := range h.Addrs() {
+            logger.InfoJ("p2p_addr", map[string]any{"self_id": h.ID().String(), "addr": a.String()})
+        }
+    }
+
     // receivers
     go t.loopQBFT(ctx)
     go t.loopTx(ctx)

@@ -108,3 +108,39 @@ KeyShare Encryption (optional)
   - Losing the key makes the current KeyShare unreadable; `.bak` fallback may still be encrypted depending on prior writes.
   - AES-256-GCM with random nonce (12B) is used; on-disk format is flagged, backward-compatible reader supports both plaintext and encrypted files.
   - This feature is behind configuration only; disabled by default to keep CI/builds unchanged.
+
+
+Cross‑Device P2P (behind flag)
+
+Goal
+- Run Aequa nodes on different machines and let them discover/connect using libp2p+gossipsub (default off; requires binary built with `-tags p2p`).
+
+Prerequisites
+- Open one TCP port per node for P2P (e.g., 31000) on host firewall/NAT.
+- Binary built with p2p tag, or Docker image started with that tag in build step.
+
+Bootnode (Node A)
+- Start with P2P enabled and an explicit listen address:
+  ./dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620 \
+    --p2p.enable --p2p.listen /ip4/0.0.0.0/tcp/31000
+- On startup logs, copy lines like:
+  {"msg":"p2p_addr", "self_id":"12D3KooW...", "addr":"/ip4/0.0.0.0/tcp/31000"}
+- Replace 0.0.0.0 with the public IP (or reachable LAN IP) and compose the full bootnode multiaddr:
+  /ip4/<PUBLIC_OR_LAN_IP>/tcp/31000/p2p/<SELF_ID>
+- Save one per line into a file (e.g., ./bootnodes.txt).
+
+Joiner (Node B, C, ...)
+- Start with the bootnodes file:
+  ./dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620 \
+    --p2p.enable --p2p.bootnodes ./bootnodes.txt
+
+Verify connectivity
+- Look for logs of inbound/outbound messages and use dashboards:
+  - p2p_msgs_total{topic, direction, result}
+  - qbft_state_transitions_total{type}
+  - mempool_in_total{result}, mempool_size (if TX API is enabled)
+
+Notes
+- TX API (optional) requires: AEQUA_ENABLE_TX_API=1 and POST /v1/tx/plain
+- Keep metrics/log label sets unchanged; all P2P metrics are new families.
+- For NAT traversal, try `--p2p.nat`; otherwise forward the port on the router.
