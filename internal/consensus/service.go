@@ -16,7 +16,11 @@ import (
     "os"
 )
 
-type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor; wal *qbft.WAL; lastWAL qbft.Message; tss TSSAggVerifier; enableTSSSync bool; enableBuilder bool; pool *pl.Container; policy pl.BuilderPolicy; lastBlock map[uint64]map[uint64]pl.StandardBlock; enableTSSSign bool; signer TSSSigner }
+// QbftBroadcaster is a minimal broadcaster abstraction to decouple P2P transport.
+// Any type implementing BroadcastQBFT(ctx,msg) can be injected (e.g., libp2p transport).
+type QbftBroadcaster interface{ BroadcastQBFT(ctx context.Context, msg qbft.Message) error }
+
+type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor; wal *qbft.WAL; lastWAL qbft.Message; tss TSSAggVerifier; enableTSSSync bool; enableBuilder bool; pool *pl.Container; policy pl.BuilderPolicy; lastBlock map[uint64]map[uint64]pl.StandardBlock; enableTSSSign bool; signer TSSSigner; bc QbftBroadcaster }
 
 func New() *Service { return &Service{} }
 func NewWithSub(sub bus.Subscriber) *Service { return &Service{sub: sub} }
@@ -52,6 +56,10 @@ func (s *Service) SetBuilderPolicy(p pl.BuilderPolicy) { s.policy = p }
 
 // SetTSSSigner injects an optional TSS signer used at commit when enabled.
 func (s *Service) SetTSSSigner(si TSSSigner) { s.signer = si }
+
+// SetBroadcaster injects an optional broadcaster used to publish local votes
+// (prepare/commit) to the network. When nil, broadcasting is disabled.
+func (s *Service) SetBroadcaster(b QbftBroadcaster) { s.bc = b }
 
 func (s *Service) Start(ctx context.Context) error {
     if s.sub == nil {
@@ -98,6 +106,16 @@ func (s *Service) Start(ctx context.Context) error {
                     // Persist vote intent to WAL before processing (best-effort)
                     if s.wal != nil && (msg.Type == qbft.MsgPrepare || msg.Type == qbft.MsgCommit) {
                         _ = s.wal.AppendIntent(msg)
+                    }
+                    // Optional: broadcast local votes (prepare/commit) via injected broadcaster.
+                    if s.bc != nil && (msg.Type == qbft.MsgPrepare || msg.Type == qbft.MsgCommit) {
+                        if err := s.bc.BroadcastQBFT(ctx, msg); err != nil {
+                            metrics.Inc("consensus_broadcast_total", map[string]string{"type": string(msg.Type), "result":"error"})
+                            logger.ErrorJ("consensus_broadcast", map[string]any{"result":"error", "type": string(msg.Type), "height": msg.Height, "round": msg.Round, "trace_id": ev.TraceID, "err": err.Error()})
+                        } else {
+                            metrics.Inc("consensus_broadcast_total", map[string]string{"type": string(msg.Type), "result":"ok"})
+                            logger.InfoJ("consensus_broadcast", map[string]any{"result":"ok", "type": string(msg.Type), "height": msg.Height, "round": msg.Round, "trace_id": ev.TraceID})
+                        }
                     }
                     // Behind-flag builder: prepare deterministic block for this coordinate
                     if s.enableBuilder && s.pool != nil {
