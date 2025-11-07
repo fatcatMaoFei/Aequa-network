@@ -1,17 +1,12 @@
 package consensus
 
 import (
-    "context"
     "testing"
     "time"
     "github.com/zmlAEQ/Aequa-network/pkg/bus"
     pl "github.com/zmlAEQ/Aequa-network/internal/payload"
     pt "github.com/zmlAEQ/Aequa-network/internal/payload/plaintext_v1"
 )
-
-// stub signer records calls
-type recSigner struct{ called int }
-func (r *recSigner) Sign(_ context.Context, _ uint64, _ uint64, _ []byte) ([]byte, error) { r.called++; return []byte("ok"), nil }
 
 func TestService_BuilderRuns_WhenEnabled(t *testing.T) {
     b := bus.New(4)
