@@ -6,6 +6,8 @@ const (
     MsgPreprepare Type = "preprepare"
     MsgPrepare   Type = "prepare"
     MsgCommit    Type = "commit"
+    MsgViewChange Type = "view_change"
+    MsgNewView    Type = "new_view"
 )
 
 type Message struct {
