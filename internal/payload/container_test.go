@@ -1,7 +1,8 @@
-package payload
+package payload_test
 
 import (
     "testing"
+    payload "github.com/zmlAEQ/Aequa-network/internal/payload"
     pt "github.com/zmlAEQ/Aequa-network/internal/payload/plaintext_v1"
 )
 
@@ -14,7 +15,7 @@ func (d dummy) SortKey() uint64 { return 0 }
 
 func TestContainer_RoutesToTypedPool(t *testing.T) {
     pool := pt.New()
-    c := NewContainer(map[string]TypedMempool{"plaintext_v1": pool})
+    c := payload.NewContainer(map[string]payload.TypedMempool{"plaintext_v1": pool})
     // add via a proper typed payload instance
     if err := c.Add(&pt.PlaintextTx{From:"X", Nonce:0, Gas:1, Fee:1, Sig: make([]byte,32)}); err != nil {
         t.Fatalf("add: %v", err)
@@ -23,4 +24,3 @@ func TestContainer_RoutesToTypedPool(t *testing.T) {
     // unknown type is ignored
     _ = c.Add(dummy{t:"unknown"})
 }
-
