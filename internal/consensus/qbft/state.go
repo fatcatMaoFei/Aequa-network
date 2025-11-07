@@ -33,7 +33,11 @@ type Processor interface {
 func (s *State) Process(msg Message) error {
     // Lightweight, non-authoritative update of coordinates for visibility.
     s.Height = msg.Height
-    s.Round = msg.Round
+    // Do not advance round eagerly on view-change/new-view; round updates
+    // for these types are handled conditionally below when thresholds met.
+    if msg.Type != MsgViewChange && msg.Type != MsgNewView {
+        s.Round = msg.Round
+    }
     var ok bool
     changed := false // only count/log transition when state actually changes
     // Count processed messages (new family; labels unchanged elsewhere)
