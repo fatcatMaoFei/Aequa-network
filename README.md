@@ -51,6 +51,13 @@ Deployment
 - Docker (4‑node minimal): `docker build -t aequa-local:latest . && docker compose -f deploy/testnet/docker-compose.yml up -d`
 - Grafana: import `deploy/testnet/grafana/dashboard.json`; alert suggestions in `deploy/testnet/grafana/alerts.md`
 
+Cross‑device P2P (behind flag)
+- Build with tag `p2p` or use an image built with that tag. Start a bootnode (Node A):
+  `./dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620 --p2p.enable --p2p.listen /ip4/0.0.0.0/tcp/31000`
+- Copy startup logs with `p2p_addr` and compose `/ip4/<PUBLIC_OR_LAN_IP>/tcp/31000/p2p/<SELF_ID>`; put into `./bootnodes.txt`.
+- Joiners (Node B,C): `./dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620 --p2p.enable --p2p.bootnodes ./bootnodes.txt`
+- Optional TX API: set `AEQUA_ENABLE_TX_API=1` and POST to `/v1/tx/plain`.
+
 Internal Testnet Plan (Phased)
 - Phase 0: Build e2e image
 - Phase 1: Baseline ops (no attacker)
