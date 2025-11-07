@@ -34,6 +34,18 @@ Suggested alerts
   - labels: severity=warn
   - annotations: summary="p2p gate denials elevated"
 
+- P2P decode errors (wire)
+  - expr: sum(rate(p2p_msgs_total{result="decode_error"}[5m])) > 0
+  - for: 0m
+  - labels: severity=warn
+  - annotations: summary="p2p decode errors observed"
+
+- P2P no inbound traffic (consensus topic)
+  - expr: sum(rate(p2p_msgs_total{topic="aequa/qbft/v1",direction="rx"}[10m])) == 0
+  - for: 10m
+  - labels: severity=warn
+  - annotations: summary="no inbound qbft traffic for 10m"
+
 - TSS session timeouts (if enabled in future)
   - expr: sum(rate(tss_sessions_total{result="timeout"}[10m])) > 0
   - for: 0m

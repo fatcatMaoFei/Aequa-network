@@ -32,3 +32,9 @@ Optional: KeyShare encryption
   - Provide a 32-byte key with either `AEQUA_TSS_KEYSTORE_KEY` (hex) or `AEQUA_TSS_KEYSTORE_KEY_FILE` (path to raw bytes).
   - Optional best-effort memory wipe: `AEQUA_TSS_ZEROIZE=1`.
 - Risks: losing the key makes current KeyShare unreadable; `.bak` may also be encrypted depending on timing.
+
+Dashboards & Alerts
+
+- Import `deploy/testnet/grafana/dashboard.json` into Grafana (Prometheus datasource uid: Prometheus)
+- Optionally import `deploy/testnet/grafana/p2p_panels.json` for P2P visibility (requires p2p build + flags)
+- See `deploy/testnet/grafana/alerts.md` for alert suggestions (do not alter label sets)
