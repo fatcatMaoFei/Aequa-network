@@ -1,6 +1,7 @@
 package consensus
 
 import (
+    "context"
     "testing"
     "time"
     "github.com/zmlAEQ/Aequa-network/pkg/bus"
