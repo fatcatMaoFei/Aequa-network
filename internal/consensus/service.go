@@ -12,7 +12,7 @@ import (
     "github.com/zmlAEQ/Aequa-network/internal/state"
 )
 
-type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor }
+type Service struct{ sub bus.Subscriber; v qbft.Verifier; store state.Store; st qbft.Processor; wal *qbft.WAL }
 
 func New() *Service { return &Service{} }
 func NewWithSub(sub bus.Subscriber) *Service { return &Service{sub: sub} }
@@ -26,6 +26,9 @@ func (s *Service) SetStore(st state.Store) { s.store = st }
 
 // SetProcessor allows tests/wiring to inject a qbft state processor. If nil, a default state is created on start.
 func (s *Service) SetProcessor(p qbft.Processor) { s.st = p }
+
+// SetWAL allows injecting a qbft WAL implementation (optional).
+func (s *Service) SetWAL(w *qbft.WAL) { s.wal = w }
 
 func (s *Service) Start(ctx context.Context) error {
     if s.sub == nil {
@@ -56,6 +59,10 @@ func (s *Service) Start(ctx context.Context) error {
                 // Map event to qbft message via adapter
                 msg := MapEventToQBFT(ev)
                 if err := s.v.Verify(msg); err == nil {
+                    // Persist vote intent to WAL before processing (best-effort)
+                    if s.wal != nil && (msg.Type == qbft.MsgPrepare || msg.Type == qbft.MsgCommit) {
+                        _ = s.wal.AppendIntent(msg)
+                    }
                     _ = s.st.Process(msg)
                     if err2 := s.store.SaveLastState(ctx, state.LastState{Height: msg.Height, Round: msg.Round}); err2 != nil {
                         logger.ErrorJ("consensus_state", map[string]any{"op":"save", "result":"error", "err": err2.Error(), "trace_id": ev.TraceID})
