@@ -34,6 +34,8 @@ func (s *State) Process(msg Message) error {
     s.Round = msg.Round
     var ok bool
     changed := false // only count/log transition when state actually changes
+    // Count processed messages (new family; labels unchanged elsewhere)
+    metrics.Inc("qbft_msg_total", map[string]string{"type": string(msg.Type)})
     switch msg.Type {
     case MsgPreprepare:
         // Placeholder leader validation: if Leader is set, only accept from that id
@@ -87,9 +89,11 @@ func (s *State) Process(msg Message) error {
             goto END
         }
         s.prepareVotes[msg.From] = struct{}{}
-        if s.Phase == "preprepared" && len(s.prepareVotes) >= 2 { // minimal threshold
+        if s.Phase == "preprepared" && len(s.prepareVotes) >= 2 { // minimal threshold (2)
             s.Phase = "prepared"
             changed = true
+            // Built a prepare QC (new family; single tick on first advance)
+            metrics.Inc("qbft_qc_built_total", map[string]string{"kind":"prepare"})
             break
         }
         // counted as processed but no phase change if still below threshold
@@ -131,6 +135,8 @@ func (s *State) Process(msg Message) error {
         if s.Phase != "commit" && len(s.commitVotes) >= 1 {
             s.Phase = "commit"
             changed = true
+            // Built a commit QC (placeholder 1 threshold for now)
+            metrics.Inc("qbft_qc_built_total", map[string]string{"kind":"commit"})
         }
     default:
         // Keep previous phase for unknown types; still record observability.
