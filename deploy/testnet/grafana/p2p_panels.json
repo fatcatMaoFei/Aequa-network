@@ -1,0 +1,51 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "P2P msgs rate by topic/direction",
+      "id": 1,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "targets": [
+        {"refId": "A", "expr": "sum by (topic, direction) (rate(p2p_msgs_total[5m]))"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "P2P bytes rate by topic/direction",
+      "id": 2,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "targets": [
+        {"refId": "A", "expr": "sum by (topic, direction) (rate(p2p_bytes_total[5m]))"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Consensus broadcast results",
+      "id": 3,
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 16},
+      "targets": [
+        {"refId": "A", "expr": "sum by (type, result) (rate(consensus_broadcast_total[5m]))"}
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["aequa", "p2p"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Aequa · P2P",
+  "uid": null,
+  "version": 1,
+  "weekStart": ""
+}
+
