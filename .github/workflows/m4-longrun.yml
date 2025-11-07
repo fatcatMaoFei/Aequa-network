@@ -470,6 +470,42 @@ jobs:
           name: chaos-e2e-c4-logs
           path: chaos-e2e-c4.out
 
+  # Added in PR-035: builder/payload long-run loops (baseline, non-chaos)
+  builder-loop-c1:
+    name: builder/payload loop 1/2 (6h)
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run consensus/payload manager tests (chunk)
+        run: bash ./.github/scripts/go-test-loop.sh ./internal/consensus/payload ${{ env.CHUNK_MIN }} builder-c1.out -race -run . || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: builder-c1-logs
+          path: builder-c1.out
+
+  builder-loop-c2:
+    name: builder/payload loop 2/2 (6h)
+    runs-on: ubuntu-latest
+    needs: [builder-loop-c1]
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run payload package tests (chunk)
+        run: bash ./.github/scripts/go-test-loop.sh ./internal/payload ${{ env.CHUNK_MIN }} builder-c2.out -race -run . || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: builder-c2-logs
+          path: builder-c2.out
+
   aggregate:
     name: aggregate-report
     runs-on: ubuntu-latest
@@ -480,6 +516,7 @@ jobs:
       - p2p-dkg-c4
       - state-db-c4
       - chaos-e2e-c4
+      - builder-loop-c2
     if: always()
     steps:
       - name: Build summary
