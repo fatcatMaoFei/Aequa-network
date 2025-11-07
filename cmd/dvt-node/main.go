@@ -14,6 +14,8 @@ import (
     "github.com/zmlAEQ/Aequa-network/internal/monitoring"
     "github.com/zmlAEQ/Aequa-network/internal/p2p"
     "github.com/zmlAEQ/Aequa-network/internal/tss"
+    payload "github.com/zmlAEQ/Aequa-network/internal/payload"
+    plaintext_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/plaintext_v1"
     "github.com/zmlAEQ/Aequa-network/pkg/bus"
     "github.com/zmlAEQ/Aequa-network/pkg/lifecycle"
     "github.com/zmlAEQ/Aequa-network/pkg/logger"
@@ -52,14 +54,27 @@ func main() {
     }
 
     m := lifecycle.New()
-    m.Add(api.New(apiAddr, publish, upstream))
+    apis := api.New(apiAddr, publish, upstream)
+    // Publish validated txs to bus (KindTx) for local mempool ingest.
+    apis.SetTxPublisher(func(ctx context.Context, pl payload.Payload) {
+        tid, _ := trace.FromContext(ctx)
+        b.Publish(ctx, bus.Event{Kind: bus.KindTx, Body: pl, TraceID: tid})
+    })
+    m.Add(apis)
     m.Add(monitoring.New(monAddr))
     p2ps := p2p.New()
     m.Add(p2ps)
     if enableTSS {
         m.Add(tss.New(p2ps))
     }
-    m.Add(consensus.NewWithSub(b.Subscribe()))
+    cons := consensus.NewWithSub(b.Subscribe())
+    // Wire a minimal mempool container for plaintext_v1 (used by tx gossip).
+    {
+        pools := map[string]payload.TypedMempool{}
+        pools["plaintext_v1"] = plaintext_v1.New()
+        cons.SetPayloadContainer(payload.NewContainer(pools))
+    }
+    m.Add(cons)
 
     // Start P2P transport (behind build tag); safe no-op without 'p2p' tag or when disabled.
     if p2pEnable {
@@ -83,6 +98,8 @@ func main() {
             })
             // ensure graceful stop with lifecycle: wrap and add
             m.Add(p2p.NewNetService(t))
+            // Optionally allow API to broadcast tx when enabled.
+            apis.SetTxBroadcaster(t)
         }
     }
 
