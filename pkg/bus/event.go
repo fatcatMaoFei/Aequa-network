@@ -7,7 +7,12 @@ import (
 type Kind string
 
 const (
-	KindDuty Kind = "duty"
+    KindDuty Kind = "duty"
+    // KindConsensus represents an inbound consensus (QBFT) message delivered
+    // from the network transport into the internal bus.
+    KindConsensus Kind = "consensus"
+    // KindTx is reserved for future use (transaction gossip to mempool).
+    KindTx Kind = "tx"
 )
 
 type Event struct {

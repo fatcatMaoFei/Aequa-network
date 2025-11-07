@@ -10,6 +10,7 @@ import (
 
     "github.com/zmlAEQ/Aequa-network/internal/api"
     "github.com/zmlAEQ/Aequa-network/internal/consensus"
+    qbft "github.com/zmlAEQ/Aequa-network/internal/consensus/qbft"
     "github.com/zmlAEQ/Aequa-network/internal/monitoring"
     "github.com/zmlAEQ/Aequa-network/internal/p2p"
     "github.com/zmlAEQ/Aequa-network/internal/tss"
@@ -77,6 +78,9 @@ func main() {
             }
         }
         if t, _ := p2p.StartTransportIfEnabled(ctx, cfg); t != nil {
+            t.OnQBFT(func(m qbft.Message) {
+                b.Publish(ctx, bus.Event{Kind: bus.KindConsensus, Height: m.Height, Round: m.Round, Body: m, TraceID: m.TraceID})
+            })
             // ensure graceful stop with lifecycle: wrap and add
             m.Add(p2p.NewNetService(t))
         }
