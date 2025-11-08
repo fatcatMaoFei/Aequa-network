@@ -52,11 +52,35 @@ Deployment
 - Grafana: import `deploy/testnet/grafana/dashboard.json`; alert suggestions in `deploy/testnet/grafana/alerts.md`
 
 Cross‑device P2P (behind flag)
-- Build with tag `p2p` or use an image built with that tag. Start a bootnode (Node A):
-  `./dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620 --p2p.enable --p2p.listen /ip4/0.0.0.0/tcp/31000`
-- Copy startup logs with `p2p_addr` and compose `/ip4/<PUBLIC_OR_LAN_IP>/tcp/31000/p2p/<SELF_ID>`; put into `./bootnodes.txt`.
-- Joiners (Node B,C): `./dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620 --p2p.enable --p2p.bootnodes ./bootnodes.txt`
-- Optional TX API: set `AEQUA_ENABLE_TX_API=1` and POST to `/v1/tx/plain`.
+1) Build image with the P2P tag:
+   `docker build --build-arg BUILD_TAGS=p2p -t aequa-p2p:latest .`
+2) Bootnode (Node A): choose a reachable IP/port (e.g., 192.168.1.100:31000) and run
+   ```bash
+   docker run -d --name aequa-bootnode \
+     -p 4600:4600 -p 4620:4620 -p 31000:31000 \
+     aequa-p2p:latest \
+       --validator-api 0.0.0.0:4600 \
+       --monitoring 0.0.0.0:4620 \
+       --p2p.enable \
+       --p2p.listen /ip4/0.0.0.0/tcp/31000
+   ```
+3) Capture bootnode multiaddr: `docker logs aequa-bootnode` prints `{"msg":"p2p_addr",...}`. Replace `0.0.0.0` with the reachable IP to form `/ip4/<PUBLIC_OR_LAN_IP>/tcp/31000/p2p/<SELF_ID>` and save it to `bootnodes.txt`.
+4) Joiners (Node B/C): copy the image, mount the bootnodes file, and run
+   ```bash
+   docker run -d --name aequa-joiner \
+     -p 4600:4600 -p 4620:4620 \
+     -v $(pwd)/bootnodes.txt:/app/bootnodes.txt \
+     aequa-p2p:latest \
+       --validator-api 0.0.0.0:4600 \
+       --monitoring 0.0.0.0:4620 \
+       --p2p.enable \
+       --p2p.bootnodes /app/bootnodes.txt
+   ```
+5) Optional TX API: set `AEQUA_ENABLE_TX_API=1` and POST plaintext tx to `/v1/tx/plain`.
+6) Verify via Grafana/logs:
+   - `p2p_msgs_total`/`p2p_bytes_total` show bidirectional traffic.
+   - `p2p_msgs_total{topic="aequa/tx/v1"}` and `mempool_in_total{result="ok"}` grow on both nodes after submitting a tx.
+   - `qbft_state_transitions_total{type}` increases in sync when consensus advances.
 
 Internal Testnet Plan (Phased)
 - Phase 0: Build e2e image
@@ -136,6 +160,36 @@ QBFT “投票”流程
 - 原生：`go build -o bin/dvt-node ./cmd/dvt-node` → `./bin/dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620`
 - Docker（最小 4 节点）：`docker build -t aequa-local:latest . && docker compose -f deploy/testnet/docker-compose.yml up -d`
 - Grafana：导入 `deploy/testnet/grafana/dashboard.json`；告警建议见 `deploy/testnet/grafana/alerts.md`
+
+跨设备 P2P（behind flag）
+1）构建 P2P 镜像：`docker build --build-arg BUILD_TAGS=p2p -t aequa-p2p:latest .`
+2）Bootnode（节点 A）：选择一台可被朋友访问的 IP/端口（如 192.168.1.100:31000），运行
+   ```bash
+   docker run -d --name aequa-bootnode \
+     -p 4600:4600 -p 4620:4620 -p 31000:31000 \
+     aequa-p2p:latest \
+       --validator-api 0.0.0.0:4600 \
+       --monitoring 0.0.0.0:4620 \
+       --p2p.enable \
+       --p2p.listen /ip4/0.0.0.0/tcp/31000
+   ```
+3）从 `docker logs aequa-bootnode` 里找到 `p2p_addr` 行，用真实 IP 替换 `0.0.0.0` 形成 `/ip4/<PUBLIC_OR_LAN_IP>/tcp/31000/p2p/<SELF_ID>`，保存到 `bootnodes.txt`。
+4）加入节点（B/C）：共享镜像，挂载 `bootnodes.txt`，运行
+   ```bash
+   docker run -d --name aequa-joiner \
+     -p 4600:4600 -p 4620:4620 \
+     -v $(pwd)/bootnodes.txt:/app/bootnodes.txt \
+     aequa-p2p:latest \
+       --validator-api 0.0.0.0:4600 \
+       --monitoring 0.0.0.0:4620 \
+       --p2p.enable \
+       --p2p.bootnodes /app/bootnodes.txt
+   ```
+5）可选：设置 `AEQUA_ENABLE_TX_API=1`，向 `/v1/tx/plain` POST plaintext_v1 交易。
+6）验证：
+   - 日志出现 peer connect、`p2p_addr` 行。
+   - Grafana 面板 `p2p_msgs_total/p2p_bytes_total` 有流量；`p2p_msgs_total{topic="aequa/tx/v1"}`、`mempool_in_total{result="ok"}` 同步增长。
+   - `qbft_state_transitions_total{type}` 在两台机器上同步增加，证明共识进展一致。
 
 内部测试网计划（分阶段）
 - 阶段 0：e2e 镜像构建
