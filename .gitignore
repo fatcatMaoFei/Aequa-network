@@ -9,10 +9,6 @@ bin/
 **/.vscode/
 **/vendor/
 
-
-
-
-
-docs/
+# Project docs are tracked (plans, specs)
 coverage
 coverage
