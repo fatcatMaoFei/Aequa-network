@@ -35,8 +35,11 @@ Workstreams (with DFBA / BEAST landing path)
    - Reliability: extend chaos scripts to new topics; rollback by disabling flags.
 
 Next small PRs (deliverable-oriented)
-- PR1: Inject default BuilderPolicy (plaintext_v1) and enable builder flag functionality; add metrics. (done locally)
-- PR2: Extend tx schema + API validation + wire structs; add auction_bid_v1 typed mempool stub; set default builder order auction_bid_v1->plaintext_v1.
-- PR3: Emit block value accounting records at commit (log/metric) and leave fee sink hook for MEVDistributor.
-- PR4: Add BEAST stubs: private_v1 payload + API/P2P topic; TSS interface placeholders; flag-gated.
-- PR5: Add SDK scaffold (TS) wrapping existing APIs; no onchain calls yet.
+- PR1: Inject default BuilderPolicy (plaintext_v1) and enable builder flag functionality; add metrics. (done)
+- PR2: Extend tx schema + API validation + wire structs; add auction_bid_v1 typed mempool stub; set default builder order auction_bid_v1->plaintext_v1. (done)
+- PR3: Emit block value accounting records at commit (log/metric). (done)
+- PR4: DFBA ordering implementation (window/thresholds), rejection metrics, tests.
+- PR5: Fee sink interface on commit (webhook stub), metrics/logs; keep non-blocking.
+- PR6: BEAST stubs: private_v1 payload + API/P2P topic; TSS interface placeholders; flag-gated.
+- PR7: SDK scaffold (TS) wrapping existing APIs; TxEnvelope for plaintext/auction; examples/tests.
+- PR8 (optional): BEAST real impl (blst tag, batch decrypt/agg verify), privacy metrics.
