@@ -172,11 +172,15 @@ func (s *Service) Start(ctx context.Context) error {
 						hdr := pl.BlockHeader{Height: msg.Height, Round: msg.Round}
 						blk := pl.PrepareProposal(s.pool, hdr, s.policy)
 						if err := pl.ProcessProposal(blk, s.policy); err == nil {
+							blk.Stats = pl.SummarizeStats(blk.Items)
 							if s.lastBlock[msg.Height] == nil {
 								s.lastBlock[msg.Height] = make(map[uint64]pl.StandardBlock)
 							}
 							s.lastBlock[msg.Height][msg.Round] = blk
-							logger.InfoJ("consensus_builder", map[string]any{"result": "ok", "height": msg.Height, "round": msg.Round, "items": len(blk.Items)})
+							logger.InfoJ("consensus_builder", map[string]any{
+								"result": "ok", "height": msg.Height, "round": msg.Round,
+								"items": len(blk.Items), "bids": blk.Stats.TotalBids, "fees": blk.Stats.TotalFees,
+							})
 						} else {
 							logger.ErrorJ("consensus_builder", map[string]any{"result": "reject", "err": err.Error(), "height": msg.Height, "round": msg.Round})
 						}
@@ -192,9 +196,16 @@ func (s *Service) Start(ctx context.Context) error {
 					}
 					if allowed {
 						_ = s.st.Process(msg)
-						if s.enableTSSSign && s.signer != nil && msg.Type == qbft.MsgCommit {
-							if row, ok := s.lastBlock[msg.Height]; ok {
-								if blk, ok2 := row[msg.Round]; ok2 {
+						if row, ok := s.lastBlock[msg.Height]; ok {
+							if blk, ok2 := row[msg.Round]; ok2 {
+								// Emit block value accounting metrics/logs on commit path.
+								metrics.ObserveSummary("block_value_bids", nil, float64(blk.Stats.TotalBids))
+								metrics.ObserveSummary("block_value_fees", nil, float64(blk.Stats.TotalFees))
+								logger.InfoJ("consensus_block_value", map[string]any{
+									"height": msg.Height, "round": msg.Round,
+									"bids": blk.Stats.TotalBids, "fees": blk.Stats.TotalFees, "items": len(blk.Items),
+								})
+								if s.enableTSSSign && s.signer != nil && msg.Type == qbft.MsgCommit {
 									b, _ := json.Marshal(blk)
 									sum := sha256.Sum256(b)
 									if _, err := s.signer.Sign(ctx, msg.Height, msg.Round, sum[:]); err != nil {
