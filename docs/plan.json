@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "updated_at": "2025-12-11",
+  "principles": [
+    "small-incremental-prs",
+    "flags-default-off",
+    "no-metric-label-drift",
+    "observability-and-tests-first"
+  ],
+  "milestones": [
+    {
+      "name": "M4-baseline",
+      "status": "done",
+      "scope": [
+        "DVT sequencer core (API/P2P/QBFT/monitoring)",
+        "plaintext_v1 mempool",
+        "e2e/chaos scripts"
+      ]
+    },
+    {
+      "name": "M5-value-capture-ready",
+      "status": "in-progress",
+      "scope": [
+        "DFBA ordering path (auction_bid_v1 + builder order)",
+        "MEV value accounting and sink interface",
+        "BEAST privacy hooks behind flags (private_v1 + TSS APIs)"
+      ]
+    }
+  ],
+  "workstreams": [
+    "tx-mempool-extension",
+    "deterministic-builder-dfba",
+    "block-accounting-and-fee-sink",
+    "beast-privacy-pipeline",
+    "sdk-devex",
+    "testing-and-ops"
+  ],
+  "next_prs": [
+    "Inject default BuilderPolicy (plaintext_v1) and metrics when builder flag is on",
+    "Extend tx schema + API validation + wire structs; add auction_bid_v1 typed mempool stub; set default order auction_bid_v1->plaintext_v1",
+    "Emit block value accounting records at commit and expose fee sink hook (MEVDistributor target)",
+    "Add BEAST stubs: private_v1 payload + API/P2P topic + TSS placeholders (flag-gated)",
+    "Add SDK scaffold (TS) wrapping existing APIs; no onchain calls yet"
+  ]
+}
