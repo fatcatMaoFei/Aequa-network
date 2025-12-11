@@ -1,13 +1,13 @@
 package plaintext_v1
 
 import (
-    "crypto/sha256"
-    "errors"
-    "sort"
-    "sync"
+	"crypto/sha256"
+	"errors"
+	"sort"
+	"sync"
 
-    "github.com/zmlAEQ/Aequa-network/internal/payload"
-    "github.com/zmlAEQ/Aequa-network/pkg/metrics"
+	"github.com/zmlAEQ/Aequa-network/internal/payload"
+	"github.com/zmlAEQ/Aequa-network/pkg/metrics"
 )
 
 // PlaintextTx is a minimal, nonce-ordered tx used for stage-1 mempool.
@@ -117,4 +117,3 @@ func (p *Pool) Len() int {
     for _, ll := range p.pendBySender { sum += len(ll) }
     return sum
 }
-
