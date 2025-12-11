@@ -33,6 +33,7 @@ func main() {
 		p2pListen string
 		p2pBoot   string
 		p2pNAT    bool
+		feeSink   string
 	)
 	flag.StringVar(&apiAddr, "validator-api", "127.0.0.1:4600", "Validator API listen address")
 	flag.StringVar(&monAddr, "monitoring", "127.0.0.1:4620", "Monitoring listen address")
@@ -42,6 +43,7 @@ func main() {
 	flag.StringVar(&p2pListen, "p2p.listen", "", "P2P listen multiaddr (e.g. /ip4/0.0.0.0/tcp/31000)")
 	flag.StringVar(&p2pBoot, "p2p.bootnodes", "", "Comma-separated bootnode multiaddrs or path to file")
 	flag.BoolVar(&p2pNAT, "p2p.nat", false, "Enable NAT port mapping")
+	flag.StringVar(&feeSink, "fee-sink.webhook", "", "Optional webhook URL to export block value accounting (best-effort)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -69,6 +71,10 @@ func main() {
 		m.Add(tss.New(p2ps))
 	}
 	cons := consensus.NewWithSub(b.Subscribe())
+	// Optional fee sink (non-blocking)
+	if feeSink != "" {
+		cons.SetFeeSink(consensus.WebhookSink{URL: feeSink})
+	}
 	// Wire a minimal mempool container for plaintext_v1 (used by tx gossip).
 	{
 		pools := map[string]payload.TypedMempool{}
