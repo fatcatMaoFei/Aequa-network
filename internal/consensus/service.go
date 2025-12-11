@@ -40,6 +40,7 @@ type Service struct {
 	enableTSSSign bool
 	signer        TSSSigner
 	bc            QbftBroadcaster
+	sink          FeeSink
 }
 
 func New() *Service                          { return &Service{} }
@@ -85,6 +86,9 @@ func (s *Service) SetTSSSigner(si TSSSigner) { s.signer = si }
 // (prepare/commit) to the network. When nil, broadcasting is disabled.
 func (s *Service) SetBroadcaster(b QbftBroadcaster) { s.bc = b }
 
+// SetFeeSink injects a non-blocking sink to export block value accounting.
+func (s *Service) SetFeeSink(fs FeeSink) { s.sink = fs }
+
 func (s *Service) Start(ctx context.Context) error {
 	if s.sub == nil {
 		logger.Info("consensus start (stub)")
@@ -98,6 +102,9 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	if s.st == nil {
 		s.st = &qbft.State{}
+	}
+	if s.sink == nil {
+		s.sink = noopSink{}
 	}
 	s.enableTSSSync = os.Getenv("AEQUA_ENABLE_TSS_STATE_SYNC") == "1"
 	s.enableBuilder = os.Getenv("AEQUA_ENABLE_BUILDER") == "1"
@@ -206,6 +213,11 @@ func (s *Service) Start(ctx context.Context) error {
 								logger.InfoJ("consensus_block_value", map[string]any{
 									"height": msg.Height, "round": msg.Round,
 									"bids": blk.Stats.TotalBids, "fees": blk.Stats.TotalFees, "items": len(blk.Items),
+								})
+								// Non-blocking fee sink publish (best-effort).
+								s.sink.Publish(ValueRecord{
+									Height: msg.Height, Round: msg.Round,
+									Bids: blk.Stats.TotalBids, Fees: blk.Stats.TotalFees, Items: len(blk.Items),
 								})
 								if s.enableTSSSign && s.signer != nil && msg.Type == qbft.MsgCommit {
 									b, _ := json.Marshal(blk)
