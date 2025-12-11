@@ -9,6 +9,8 @@ import (
 
 	qbft "github.com/zmlAEQ/Aequa-network/internal/consensus/qbft"
 	pl "github.com/zmlAEQ/Aequa-network/internal/payload"
+	auction_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/auction_bid_v1"
+	plaintext_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/plaintext_v1"
 	"github.com/zmlAEQ/Aequa-network/internal/state"
 	"github.com/zmlAEQ/Aequa-network/pkg/bus"
 	"github.com/zmlAEQ/Aequa-network/pkg/lifecycle"
@@ -172,11 +174,15 @@ func (s *Service) Start(ctx context.Context) error {
 						hdr := pl.BlockHeader{Height: msg.Height, Round: msg.Round}
 						blk := pl.PrepareProposal(s.pool, hdr, s.policy)
 						if err := pl.ProcessProposal(blk, s.policy); err == nil {
+							blk.Stats = summarizeStats(blk.Items)
 							if s.lastBlock[msg.Height] == nil {
 								s.lastBlock[msg.Height] = make(map[uint64]pl.StandardBlock)
 							}
 							s.lastBlock[msg.Height][msg.Round] = blk
-							logger.InfoJ("consensus_builder", map[string]any{"result": "ok", "height": msg.Height, "round": msg.Round, "items": len(blk.Items)})
+							logger.InfoJ("consensus_builder", map[string]any{
+								"result": "ok", "height": msg.Height, "round": msg.Round,
+								"items": len(blk.Items), "bids": blk.Stats.TotalBids, "fees": blk.Stats.TotalFees,
+							})
 						} else {
 							logger.ErrorJ("consensus_builder", map[string]any{"result": "reject", "err": err.Error(), "height": msg.Height, "round": msg.Round})
 						}
@@ -192,9 +198,16 @@ func (s *Service) Start(ctx context.Context) error {
 					}
 					if allowed {
 						_ = s.st.Process(msg)
-						if s.enableTSSSign && s.signer != nil && msg.Type == qbft.MsgCommit {
-							if row, ok := s.lastBlock[msg.Height]; ok {
-								if blk, ok2 := row[msg.Round]; ok2 {
+						if row, ok := s.lastBlock[msg.Height]; ok {
+							if blk, ok2 := row[msg.Round]; ok2 {
+								// Emit block value accounting metrics/logs on commit path.
+								metrics.ObserveSummary("block_value_bids", nil, float64(blk.Stats.TotalBids))
+								metrics.ObserveSummary("block_value_fees", nil, float64(blk.Stats.TotalFees))
+								logger.InfoJ("consensus_block_value", map[string]any{
+									"height": msg.Height, "round": msg.Round,
+									"bids": blk.Stats.TotalBids, "fees": blk.Stats.TotalFees, "items": len(blk.Items),
+								})
+								if s.enableTSSSign && s.signer != nil && msg.Type == qbft.MsgCommit {
 									b, _ := json.Marshal(blk)
 									sum := sha256.Sum256(b)
 									if _, err := s.signer.Sign(ctx, msg.Height, msg.Round, sum[:]); err != nil {
@@ -248,4 +261,19 @@ func (s *Service) VerifyHeaderWithTSS(pkGroup, header, sig []byte) bool {
 		logger.ErrorJ("consensus_state_sync", map[string]any{"result": "fail"})
 	}
 	return ok
+}
+
+// summarizeStats aggregates bids/fees for a block selection without importing payload in the payload package.
+func summarizeStats(items []pl.Payload) pl.BlockStats {
+	var stats pl.BlockStats
+	stats.Items = len(items)
+	for _, it := range items {
+		switch tx := it.(type) {
+		case *auction_v1.AuctionBidTx:
+			stats.TotalBids += tx.Bid
+		case *plaintext_v1.PlaintextTx:
+			stats.TotalFees += tx.Fee
+		}
+	}
+	return stats
 }
