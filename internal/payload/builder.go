@@ -3,8 +3,6 @@ package payload
 import (
 	"errors"
 
-	auction_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/auction_bid_v1"
-	plaintext_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/plaintext_v1"
 	"github.com/zmlAEQ/Aequa-network/pkg/metrics"
 )
 
@@ -104,18 +102,14 @@ func belowThreshold(typ string, p Payload, pol BuilderPolicy) string {
 	switch typ {
 	case "auction_bid_v1":
 		if pol.MinBid > 0 {
-			if tx, ok := p.(*auction_v1.AuctionBidTx); ok {
-				if tx.Bid < pol.MinBid {
-					return "below_min_bid"
-				}
+			if p.SortKey() < pol.MinBid {
+				return "below_min_bid"
 			}
 		}
 	case "plaintext_v1":
 		if pol.MinFee > 0 {
-			if tx, ok := p.(*plaintext_v1.PlaintextTx); ok {
-				if tx.Fee < pol.MinFee {
-					return "below_min_fee"
-				}
+			if p.SortKey() < pol.MinFee {
+				return "below_min_fee"
 			}
 		}
 	}
