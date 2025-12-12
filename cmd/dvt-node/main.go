@@ -25,15 +25,16 @@ import (
 
 func main() {
 	var (
-		apiAddr   string
-		monAddr   string
-		upstream  string
-		enableTSS bool
-		p2pEnable bool
-		p2pListen string
-		p2pBoot   string
-		p2pNAT    bool
-		feeSink   string
+		apiAddr     string
+		monAddr     string
+		upstream    string
+		enableTSS   bool
+		p2pEnable   bool
+		p2pListen   string
+		p2pBoot     string
+		p2pNAT      bool
+		feeSink     string
+		enableBeast bool
 	)
 	flag.StringVar(&apiAddr, "validator-api", "127.0.0.1:4600", "Validator API listen address")
 	flag.StringVar(&monAddr, "monitoring", "127.0.0.1:4620", "Monitoring listen address")
@@ -44,6 +45,7 @@ func main() {
 	flag.StringVar(&p2pBoot, "p2p.bootnodes", "", "Comma-separated bootnode multiaddrs or path to file")
 	flag.BoolVar(&p2pNAT, "p2p.nat", false, "Enable NAT port mapping")
 	flag.StringVar(&feeSink, "fee-sink.webhook", "", "Optional webhook URL to export block value accounting (best-effort)")
+	flag.BoolVar(&enableBeast, "enable-beast", false, "Enable BEAST private tx path (behind feature flag)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -80,6 +82,10 @@ func main() {
 		pools := map[string]payload.TypedMempool{}
 		pools["auction_bid_v1"] = auction_v1.New()
 		pools["plaintext_v1"] = plaintext_v1.New()
+		if enableBeast {
+			pools["private_v1"] = private_v1.New()
+			os.Setenv("AEQUA_ENABLE_BEAST", "1")
+		}
 		cons.SetPayloadContainer(payload.NewContainer(pools))
 	}
 	m.Add(cons)

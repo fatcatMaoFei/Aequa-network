@@ -115,7 +115,11 @@ func (s *Service) Start(ctx context.Context) error {
 	// If builder is enabled but no policy configured, apply a safe default
 	// so plaintext_v1 can be deterministically selected in small steps.
 	if s.enableBuilder && len(s.policy.Order) == 0 {
-		s.policy = pl.BuilderPolicy{Order: []string{"auction_bid_v1", "plaintext_v1"}, MaxN: 1024}
+		order := []string{"auction_bid_v1", "plaintext_v1"}
+		if os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
+			order = append([]string{"private_v1"}, order...)
+		}
+		s.policy = pl.BuilderPolicy{Order: order, MaxN: 1024}
 		metrics.Inc("builder_policy_total", map[string]string{"result": "default"})
 		logger.InfoJ("consensus_builder_policy", map[string]any{"result": "default", "order": s.policy.Order, "max_n": s.policy.MaxN})
 	} else if s.enableBuilder {
