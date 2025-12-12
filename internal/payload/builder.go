@@ -55,7 +55,7 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 			// Time window check if configured
 			if windowDur > 0 {
 				if meta, ok := c.Arrival(p); ok {
-					if meta.ts.Before(now.Add(-windowDur)) {
+					if meta.TS.Before(now.Add(-windowDur)) {
 						metrics.Inc("builder_reject_total", map[string]string{"type": typ, "reason": "late"})
 						continue
 					}
@@ -71,8 +71,8 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 		sort.SliceStable(filtered, func(i, j int) bool {
 			mi, _ := c.Arrival(filtered[i])
 			mj, _ := c.Arrival(filtered[j])
-			if mi.seq != mj.seq {
-				return mi.seq < mj.seq
+			if mi.Seq != mj.Seq {
+				return mi.Seq < mj.Seq
 			}
 			return filtered[i].SortKey() > filtered[j].SortKey()
 		})

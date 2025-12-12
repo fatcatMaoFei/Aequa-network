@@ -140,10 +140,10 @@ func TestPrepareProposal_ArrivalOrderRespected(t *testing.T) {
 	}
 	meta0, _ := c.Arrival(blk.Items[0])
 	meta1, _ := c.Arrival(blk.Items[1])
-	if meta0.seq == 0 || meta1.seq == 0 {
+	if meta0.Seq == 0 || meta1.Seq == 0 {
 		t.Fatalf("arrival metadata missing")
 	}
-	if meta0.seq >= meta1.seq {
-		t.Fatalf("arrival order not respected: seq0=%d seq1=%d", meta0.seq, meta1.seq)
+	if meta0.Seq >= meta1.Seq {
+		t.Fatalf("arrival order not respected: seq0=%d seq1=%d", meta0.Seq, meta1.Seq)
 	}
 }

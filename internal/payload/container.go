@@ -14,8 +14,8 @@ type Container struct {
 }
 
 type arrivalMeta struct {
-	seq uint64
-	ts  time.Time
+	Seq uint64
+	TS  time.Time
 }
 
 // NewContainer constructs a container with the provided type->pool map.
@@ -33,7 +33,7 @@ func (c *Container) Add(p Payload) error {
 	}
 	c.seq++
 	key := string(p.Hash())
-	c.meta[key] = arrivalMeta{seq: c.seq, ts: time.Now()}
+	c.meta[key] = arrivalMeta{Seq: c.seq, TS: time.Now()}
 	c.mu.Unlock()
 	return pool.Add(p)
 }
