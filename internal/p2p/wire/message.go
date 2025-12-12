@@ -5,7 +5,11 @@ import (
 )
 
 // Topic names for pubsub channels (stable identifiers).
-const TopicQBFT = "aequa/qbft/v1"
+const (
+	TopicQBFT      = "aequa/qbft/v1"
+	TopicTx        = "aequa/tx/v1"
+	TopicTxPrivate = "aequa/tx/private/v1"
+)
 
 // QBFT is the wire-format counterpart of qbft.Message.
 // JSON encoding uses lower_snake_case keys and base64 for []byte fields.
@@ -47,4 +51,3 @@ func (w QBFT) ToInternal() qbft.Message {
         Sig:     w.Sig,
     }
 }
-

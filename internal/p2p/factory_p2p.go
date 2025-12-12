@@ -34,11 +34,14 @@ type Libp2pTransport struct{
     host   p2phost.Host
     ps     *pubsub.PubSub
     tq     *pubsub.Topic
-    tt     *pubsub.Topic
-    subQ   *pubsub.Subscription
-    subTx  *pubsub.Subscription
-    onQBFT func(qbft.Message)
-    onTx   func(payload.Payload)
+	tt     *pubsub.Topic
+	ttPriv *pubsub.Topic
+	subQ   *pubsub.Subscription
+	subTx  *pubsub.Subscription
+	subTxPriv *pubsub.Subscription
+	onQBFT func(qbft.Message)
+	onTx   func(payload.Payload)
+	onTxPriv func(payload.Payload)
 }
 
 func (t *Libp2pTransport) Start(ctx context.Context) error {
@@ -66,6 +69,11 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
     if t.tt, err = ps.Join(wire.TopicTx); err != nil { return err }
     if t.subQ, err = t.tq.Subscribe(); err != nil { return err }
     if t.subTx, err = t.tt.Subscribe(); err != nil { return err }
+    if cfg.EnableBeast {
+        if t.ttPriv, err = ps.Join(wire.TopicTxPrivate); err == nil {
+            t.subTxPriv, _ = t.ttPriv.Subscribe()
+        }
+    }
 
     // connect bootnodes (best effort)
     for _, b := range t.cfg.Bootnodes {
@@ -83,6 +91,9 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
     // receivers
     go t.loopQBFT(ctx)
     go t.loopTx(ctx)
+    if cfg.EnableBeast && t.subTxPriv != nil {
+        go t.loopTxPriv(ctx)
+    }
     logger.InfoJ("p2p_start", map[string]any{"result":"ok"})
     return nil
 }
@@ -90,8 +101,10 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
 func (t *Libp2pTransport) Stop(ctx context.Context) error {
     if t.subQ != nil { _ = t.subQ.Cancel() }
     if t.subTx != nil { _ = t.subTx.Cancel() }
+    if t.subTxPriv != nil { _ = t.subTxPriv.Cancel() }
     if t.tq != nil { _ = t.tq.Close() }
     if t.tt != nil { _ = t.tt.Close() }
+    if t.ttPriv != nil { _ = t.ttPriv.Close() }
     if t.host != nil { return t.host.Close() }
     return nil
 }
@@ -116,12 +129,18 @@ func (t *Libp2pTransport) BroadcastTx(_ context.Context, pl payload.Payload) err
     if !ok { return nil }
     b, err := json.Marshal(w)
     if err != nil { return err }
-    if err := t.tt.Publish(context.Background(), b); err != nil {
-        metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": wire.TopicTx, "direction":"tx", "result":"error"})
+    topic := wire.TopicTx
+    tt := t.tt
+    if pl.Type() == wire.TypePrivateV1 && t.ttPriv != nil {
+        topic = wire.TopicTxPrivate
+        tt = t.ttPriv
+    }
+    if err := tt.Publish(context.Background(), b); err != nil {
+        metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": topic, "direction":"tx", "result":"error"})
         return err
     }
-    metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": wire.TopicTx, "direction":"tx", "result":"ok"})
-    metrics.Inc(MetricP2PBytesTotal, map[string]string{"topic": wire.TopicTx, "direction":"tx"})
+    metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": topic, "direction":"tx", "result":"ok"})
+    metrics.Inc(MetricP2PBytesTotal, map[string]string{"topic": topic, "direction":"tx"})
     return nil
 }
 
@@ -166,4 +185,3 @@ func connectOnce(ctx context.Context, h p2phost.Host, addr string) error {
     ctx2, cancel := context.WithTimeout(ctx, 5*time.Second); defer cancel()
     return h.Connect(ctx2, *info)
 }
-
