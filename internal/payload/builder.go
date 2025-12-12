@@ -145,14 +145,24 @@ func filterByWindowAndThreshold(c *Container, cands []Payload, typ string, pol B
 // decryptAndMapPrivate: placeholder for BEAST decrypt + mapping into sortable payload.
 func decryptAndMapPrivate(cands []Payload) []Payload {
 	// TODO: integrate beast decrypt and mapping to plaintext/auction payloads.
-	// For now, keep a deterministic copy so private_v1 txs can be handled without failing selection.
+	// For now, use the registered decrypter (noop by default) to keep the path wired.
 	out := make([]Payload, 0, len(cands))
 	for _, p := range cands {
-		if p != nil {
-			out = append(out, p)
+		if p == nil {
+			continue
 		}
+		dec, err := privateDecrypter.Decrypt(p)
+		if err != nil || dec == nil {
+			recordDecryptMetric("error")
+			continue
+		}
+		out = append(out, dec)
 	}
-	metrics.Inc("beast_decrypt_total", map[string]string{"result": "passthrough"})
+	if len(out) == 0 {
+		recordDecryptMetric("empty")
+	} else {
+		recordDecryptMetric("ok")
+	}
 	return out
 }
 
