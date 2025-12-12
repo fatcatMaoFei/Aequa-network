@@ -33,14 +33,14 @@ func (jsonDecrypter) Decrypt(p Payload) (Payload, error) {
 		return nil, err
 	}
 	switch env.Type {
-	case "", TypePlaintextV1:
+	case "", "plaintext_v1":
 		return &plaintext_v1.PlaintextTx{
 			From:  env.From,
 			Nonce: env.Nonce,
 			Gas:   env.Gas,
 			Fee:   env.Fee,
 		}, nil
-	case TypeAuctionBidV1:
+	case "auction_bid_v1":
 		return &auction_v1.AuctionBidTx{
 			From:         env.From,
 			Nonce:        env.Nonce,
