@@ -272,6 +272,11 @@ func (s *Service) handleTxPlain(w http.ResponseWriter, r *http.Request) {
 		s.logAPI(w, route, http.StatusBadRequest, start, tid, "error", "invalid json")
 		return
 	}
+	// Guard private_v1 behind explicit flag.
+	if pl != nil && pl.Type() == "private_v1" && os.Getenv("AEQUA_ENABLE_BEAST") != "1" {
+		s.logAPI(w, route, http.StatusServiceUnavailable, start, tid, "error", "beast disabled")
+		return
+	}
 	if pl == nil || pl.Validate() != nil {
 		s.logAPI(w, route, http.StatusBadRequest, start, tid, "error", "invalid tx")
 		return
