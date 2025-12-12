@@ -3,6 +3,8 @@ package payload
 import (
 	"errors"
 	"testing"
+
+	private_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/private_v1"
 )
 
 type fakeDecrypter struct {
@@ -54,3 +56,18 @@ func (d *testPayload) Type() string    { return d.t }
 func (d *testPayload) Hash() []byte    { return []byte{byte(d.key)} }
 func (d *testPayload) Validate() error { return nil }
 func (d *testPayload) SortKey() uint64 { return d.key }
+
+// json decrypter should map to plaintext_v1 when ciphertext carries JSON.
+func TestDecryptAndMapPrivate_JSONPath(t *testing.T) {
+	defer SetPrivateDecrypter(nil) // reset to noop
+	EnableLocalJSONDecrypt()
+	env := `{"type":"plaintext_v1","from":"alice","nonce":1,"gas":21000,"fee":2}`
+	priv := &private_v1.PrivateTx{From: "alice", Nonce: 1, Ciphertext: []byte(env)}
+	out := decryptAndMapPrivate([]Payload{priv})
+	if len(out) != 1 {
+		t.Fatalf("expected 1 mapped payload, got %d", len(out))
+	}
+	if out[0].Type() != "plaintext_v1" {
+		t.Fatalf("expected plaintext_v1 got %s", out[0].Type())
+	}
+}
