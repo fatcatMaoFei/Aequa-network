@@ -2,6 +2,8 @@ package payload
 
 import (
 	"errors"
+	"sort"
+	"time"
 
 	"github.com/zmlAEQ/Aequa-network/pkg/metrics"
 )
@@ -33,6 +35,8 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 	}
 	res := make([]Payload, 0, max)
 	remain := max
+	now := time.Now()
+	windowDur := time.Duration(pol.BatchTicks) * time.Millisecond
 	for _, typ := range pol.Order {
 		if remain <= 0 {
 			break
@@ -42,14 +46,43 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 		if need > remain {
 			need = remain
 		}
-		got := c.GetN(typ, need, pol.BudgetBytes)
-		for _, p := range got {
+		cands := c.GetAll(typ)
+		filtered := make([]Payload, 0, len(cands))
+		for _, p := range cands {
 			if len(res) >= max {
 				break
+			}
+			// Time window check if configured
+			if windowDur > 0 {
+				if meta, ok := c.Arrival(p); ok {
+					if meta.ts.Before(now.Add(-windowDur)) {
+						metrics.Inc("builder_reject_total", map[string]string{"type": typ, "reason": "late"})
+						continue
+					}
+				}
 			}
 			if reject := belowThreshold(typ, p, pol); reject != "" {
 				metrics.Inc("builder_reject_total", map[string]string{"type": typ, "reason": reject})
 				continue
+			}
+			filtered = append(filtered, p)
+		}
+		// Sort by arrival seq asc (fairness), then SortKey desc as tie-breaker
+		sort.SliceStable(filtered, func(i, j int) bool {
+			mi, _ := c.Arrival(filtered[i])
+			mj, _ := c.Arrival(filtered[j])
+			if mi.seq != mj.seq {
+				return mi.seq < mj.seq
+			}
+			return filtered[i].SortKey() > filtered[j].SortKey()
+		})
+		// enforce per-type window and remaining budget
+		for _, p := range filtered {
+			if len(res) >= max {
+				break
+			}
+			if len(res) >= need {
+				break
 			}
 			res = append(res, p)
 			metrics.Inc("builder_selected_total", map[string]string{"type": typ})

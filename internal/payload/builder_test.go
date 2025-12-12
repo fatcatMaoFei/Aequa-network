@@ -2,6 +2,7 @@ package payload_test
 
 import (
 	"testing"
+	"time"
 
 	payload "github.com/zmlAEQ/Aequa-network/internal/payload"
 )
@@ -101,9 +102,10 @@ func TestPrepareProposal_WindowPerType(t *testing.T) {
 		_ = c.Add(&dummyPayload{t: "plaintext_v1", key: uint64(50 - i)})
 	}
 	pol := payload.BuilderPolicy{
-		Order:  []string{"auction_bid_v1", "plaintext_v1"},
-		MaxN:   6,
-		Window: 2,
+		Order:      []string{"auction_bid_v1", "plaintext_v1"},
+		MaxN:       6,
+		Window:     2,
+		BatchTicks: 50, // ms
 	}
 	blk := payload.PrepareProposal(c, payload.BlockHeader{Height: 1, Round: 1}, pol)
 	if len(blk.Items) != 4 {
@@ -122,5 +124,23 @@ func TestPrepareProposal_WindowPerType(t *testing.T) {
 	}
 	if err := payload.ProcessProposal(blk, pol); err != nil {
 		t.Fatalf("process: %v", err)
+	}
+}
+
+func TestPrepareProposal_ArrivalOrderRespected(t *testing.T) {
+	pool := &dummyPool{}
+	c := payload.NewContainer(map[string]payload.TypedMempool{"plaintext_v1": pool})
+	_ = c.Add(&dummyPayload{t: "plaintext_v1", key: 5})
+	time.Sleep(2 * time.Millisecond)
+	_ = c.Add(&dummyPayload{t: "plaintext_v1", key: 100}) // higher fee but later
+	pol := payload.BuilderPolicy{Order: []string{"plaintext_v1"}, MaxN: 2, BatchTicks: 100}
+	blk := payload.PrepareProposal(c, payload.BlockHeader{Height: 1, Round: 1}, pol)
+	if len(blk.Items) != 2 {
+		t.Fatalf("expected 2 items")
+	}
+	meta0, _ := c.Arrival(blk.Items[0])
+	meta1, _ := c.Arrival(blk.Items[1])
+	if meta0.seq >= meta1.seq {
+		t.Fatalf("arrival order not respected: seq0=%d seq1=%d", meta0.seq, meta1.seq)
 	}
 }
