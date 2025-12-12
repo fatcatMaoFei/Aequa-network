@@ -19,6 +19,7 @@ Workstreams (with DFBA / BEAST landing path)
    - Define BuilderPolicy (type order, MaxN), default covering auction_bid_v1 -> plaintext_v1.
    - Implement DFBA selection (bid/priority fee) with fixed window; inject policy at consensus start.
    - Observability: builder_selected_total by type; DFBA selection latency/result; rejection reasons.
+   - Default params (can tune per-network, config-driven): order [auction_bid_v1, plaintext_v1], MaxN=1024, Window=MaxN, MinBid/MinFee=0, BatchTicks=0 (no time windowing by default).
 3) Block value accounting and distribution outlet
    - Extend StandardBlock header with fee/bid aggregates.
    - Consensus commit hook emits {height, bids, priorityFees} accounting record.
