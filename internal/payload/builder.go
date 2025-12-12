@@ -2,6 +2,7 @@ package payload
 
 import (
 	"errors"
+	"os"
 	"sort"
 	"time"
 
@@ -47,6 +48,9 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 		}
 		cands := c.GetAll(typ)
 		filtered := filterByWindowAndThreshold(c, cands, typ, pol, now, windowDur)
+		if typ == "private_v1" && os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
+			filtered = decryptAndMapPrivate(filtered)
+		}
 		selected := takeDeterministic(filtered, need, max-len(res))
 		res = append(res, selected...)
 		for i := 0; i < len(selected); i++ {
@@ -136,6 +140,12 @@ func filterByWindowAndThreshold(c *Container, cands []Payload, typ string, pol B
 		filtered = append(filtered, p)
 	}
 	return filtered
+}
+
+// decryptAndMapPrivate: placeholder for BEAST decrypt + mapping into sortable payload.
+func decryptAndMapPrivate(cands []Payload) []Payload {
+	// TODO: integrate beast decrypt and mapping to plaintext/auction payloads.
+	return nil
 }
 
 // takeDeterministic sorts by arrival seq asc, then SortKey desc, and takes up to need, respecting total budget.
