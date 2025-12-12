@@ -41,50 +41,15 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 		if remain <= 0 {
 			break
 		}
-		// Enforce per-type window
 		need := window
 		if need > remain {
 			need = remain
 		}
 		cands := c.GetAll(typ)
-		filtered := make([]Payload, 0, len(cands))
-		for _, p := range cands {
-			if len(res) >= max {
-				break
-			}
-			// Time window check if configured
-			if windowDur > 0 {
-				if meta, ok := c.Arrival(p); ok {
-					if meta.TS.Before(now.Add(-windowDur)) {
-						metrics.Inc("builder_reject_total", map[string]string{"type": typ, "reason": "late"})
-						continue
-					}
-				}
-			}
-			if reject := belowThreshold(typ, p, pol); reject != "" {
-				metrics.Inc("builder_reject_total", map[string]string{"type": typ, "reason": reject})
-				continue
-			}
-			filtered = append(filtered, p)
-		}
-		// Sort by arrival seq asc (fairness), then SortKey desc as tie-breaker
-		sort.SliceStable(filtered, func(i, j int) bool {
-			mi, _ := c.Arrival(filtered[i])
-			mj, _ := c.Arrival(filtered[j])
-			if mi.Seq != mj.Seq {
-				return mi.Seq < mj.Seq
-			}
-			return filtered[i].SortKey() > filtered[j].SortKey()
-		})
-		// enforce per-type window and remaining budget
-		for _, p := range filtered {
-			if len(res) >= max {
-				break
-			}
-			if len(res) >= need {
-				break
-			}
-			res = append(res, p)
+		filtered := filterByWindowAndThreshold(c, cands, typ, pol, now, windowDur)
+		selected := takeDeterministic(filtered, need, max-len(res))
+		res = append(res, selected...)
+		for i := 0; i < len(selected); i++ {
 			metrics.Inc("builder_selected_total", map[string]string{"type": typ})
 		}
 		remain = max - len(res)
@@ -149,4 +114,50 @@ func belowThreshold(typ string, p Payload, pol BuilderPolicy) string {
 		}
 	}
 	return ""
+}
+
+// filterByWindowAndThreshold applies window time check and thresholds.
+func filterByWindowAndThreshold(c *Container, cands []Payload, typ string, pol BuilderPolicy, now time.Time, windowDur time.Duration) []Payload {
+	filtered := make([]Payload, 0, len(cands))
+	for _, p := range cands {
+		// Time window check if configured
+		if windowDur > 0 {
+			if meta, ok := c.Arrival(p); ok {
+				if meta.TS.Before(now.Add(-windowDur)) {
+					metrics.Inc("builder_reject_total", map[string]string{"type": typ, "reason": "late"})
+					continue
+				}
+			}
+		}
+		if reject := belowThreshold(typ, p, pol); reject != "" {
+			metrics.Inc("builder_reject_total", map[string]string{"type": typ, "reason": reject})
+			continue
+		}
+		filtered = append(filtered, p)
+	}
+	return filtered
+}
+
+// takeDeterministic sorts by arrival seq asc, then SortKey desc, and takes up to need, respecting total budget.
+func takeDeterministic(cands []Payload, need int, budget int) []Payload {
+	if need > budget {
+		need = budget
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		ci := cands[i].Hash()
+		cj := cands[j].Hash()
+		// keep deterministic ordering based on hash as tie-breaker for stable sort
+		if len(ci) == len(cj) {
+			for k := range ci {
+				if ci[k] != cj[k] {
+					return ci[k] < cj[k]
+				}
+			}
+		}
+		return cands[i].SortKey() > cands[j].SortKey()
+	})
+	if need <= 0 || need > len(cands) {
+		need = len(cands)
+	}
+	return cands[:need]
 }

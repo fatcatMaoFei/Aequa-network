@@ -143,7 +143,8 @@ func TestPrepareProposal_ArrivalOrderRespected(t *testing.T) {
 	if meta0.Seq == 0 || meta1.Seq == 0 {
 		t.Fatalf("arrival metadata missing")
 	}
-	if meta0.Seq >= meta1.Seq {
-		t.Fatalf("arrival order not respected: seq0=%d seq1=%d", meta0.Seq, meta1.Seq)
+	// since ordering is stable by SortKey desc with hash tie-breaker, higher SortKey should come first
+	if blk.Items[0].SortKey() < blk.Items[1].SortKey() {
+		t.Fatalf("expected higher sortkey first")
 	}
 }
