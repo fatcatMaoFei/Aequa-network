@@ -17,6 +17,7 @@ type BuilderPolicy struct {
 	MinBid      uint64
 	MinFee      uint64
 	Window      int
+	BatchTicks  int // optional time ticks per batch (for DFBA windowing), advisory
 }
 
 // PrepareProposal selects payloads from a container following the policy.
@@ -85,6 +86,7 @@ func ProcessProposal(b StandardBlock, pol BuilderPolicy) error {
 			return errors.New("type priority violated")
 		}
 		if prev, seen := lastKey[t]; seen {
+			// enforce non-increasing sort key per type (DFBA fairness)
 			if it.SortKey() > prev {
 				return errors.New("sortkey not non-increasing for type: " + t)
 			}
