@@ -15,6 +15,7 @@ import (
 	"github.com/zmlAEQ/Aequa-network/internal/p2p"
 	payload "github.com/zmlAEQ/Aequa-network/internal/payload"
 	auction_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/auction_bid_v1"
+	private_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/private_v1"
 	plaintext_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/plaintext_v1"
 	"github.com/zmlAEQ/Aequa-network/internal/tss"
 	"github.com/zmlAEQ/Aequa-network/pkg/bus"
