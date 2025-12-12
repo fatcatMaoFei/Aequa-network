@@ -77,9 +77,9 @@ func (c *Container) Len() int {
 
 // Arrival returns arrival metadata if recorded.
 func (c *Container) Arrival(p Payload) (arrivalMeta, bool) {
-	key := string(p.Hash())
+	key := p.Hash()
 	c.mu.RLock()
-	meta, ok := c.meta[key]
+	meta, ok := c.meta[string(key)]
 	c.mu.RUnlock()
 	return meta, ok
 }
