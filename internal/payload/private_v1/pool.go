@@ -3,6 +3,7 @@ package private_v1
 import (
 	"crypto/sha256"
 	"errors"
+	"sync"
 
 	"github.com/zmlAEQ/Aequa-network/internal/payload"
 )
@@ -38,16 +39,38 @@ func (t *PrivateTx) Validate() error {
 func (t *PrivateTx) SortKey() uint64 { return 0 }
 
 // Pool is a stub mempool for private transactions; it accepts all valid txs.
-type Pool struct{}
+type Pool struct {
+	mu    sync.Mutex
+	items []payload.Payload
+}
 
 func New() *Pool { return &Pool{} }
 
 func (p *Pool) Add(pl payload.Payload) error {
 	if tx, ok := pl.(*PrivateTx); ok {
-		return tx.Validate()
+		if err := tx.Validate(); err != nil {
+			return err
+		}
+		p.mu.Lock()
+		p.items = append(p.items, tx)
+		p.mu.Unlock()
+		return nil
 	}
 	return nil
 }
 
-func (p *Pool) Get(n int, _ int) []payload.Payload { return nil }
-func (p *Pool) Len() int                           { return 0 }
+func (p *Pool) Get(n int, _ int) []payload.Payload {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if n <= 0 || n > len(p.items) {
+		n = len(p.items)
+	}
+	out := make([]payload.Payload, n)
+	copy(out, p.items[:n])
+	return out
+}
+func (p *Pool) Len() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.items)
+}
