@@ -37,6 +37,7 @@ func main() {
 		feeSink     string
 		enableBeast bool
 		enableJSON  bool
+		beastConf   string
 	)
 	flag.StringVar(&apiAddr, "validator-api", "127.0.0.1:4600", "Validator API listen address")
 	flag.StringVar(&monAddr, "monitoring", "127.0.0.1:4620", "Monitoring listen address")
@@ -49,6 +50,7 @@ func main() {
 	flag.StringVar(&feeSink, "fee-sink.webhook", "", "Optional webhook URL to export block value accounting (best-effort)")
 	flag.BoolVar(&enableBeast, "enable-beast", false, "Enable BEAST private tx path (behind feature flag)")
 	flag.BoolVar(&enableJSON, "beast.json", false, "Enable dev-mode JSON decrypt for private_v1 (non-crypto, for testing only)")
+	flag.StringVar(&beastConf, "beast.conf", "", "Path to BEAST committee/group key config (optional, behind blst build tag)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -90,6 +92,17 @@ func main() {
 			os.Setenv("AEQUA_ENABLE_BEAST", "1")
 			if enableJSON {
 				private_v1.EnableLocalJSONDecrypt()
+			}
+			if beastConf != "" {
+				if conf, err := private_v1.LoadConfig(beastConf); err == nil {
+					if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
+						logger.InfoJ("beast_config", map[string]any{"result": "skip", "reason": err.Error()})
+					} else {
+						logger.InfoJ("beast_config", map[string]any{"result": "loaded"})
+					}
+				} else {
+					logger.InfoJ("beast_config", map[string]any{"result": "error", "err": err.Error()})
+				}
 			}
 		}
 		cons.SetPayloadContainer(payload.NewContainer(pools))
