@@ -27,6 +27,7 @@ Workstreams (with DFBA / BEAST landing path)
    - Swap TSS stub for blst build (tagged), expose Encrypt/Decrypt/VerifyAgg interfaces.
    - Add private_v1 path: API + P2P topic + builder decrypt-after-batch ordering (flagged).
    - Keep behind flag, default off; pending/privacy metrics.
+   - Dev-only helper: enable JSON decrypt of private_v1 ciphertext via `-beast.json` flag (for testing without crypto).
 5) SDK and DevEx
    - TS/Go client wrapping /v1/duty and /v1/tx/*; provide BEAST encrypt helper (stub ok initially).
    - Docs/examples: ethers.js/viem snippets.
