@@ -1,0 +1,19 @@
+{
+  "name": "@aequa/sdk",
+  "version": "0.1.0",
+  "description": "Aequa TypeScript SDK scaffold",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"lint stub\"",
+    "test": "echo \"test stub\""
+  },
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}
