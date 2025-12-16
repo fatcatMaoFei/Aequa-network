@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/zmlAEQ/Aequa-network/internal/dfba"
 	"github.com/zmlAEQ/Aequa-network/pkg/metrics"
 )
 
@@ -20,12 +21,16 @@ type BuilderPolicy struct {
 	MinBid      uint64
 	MinFee      uint64
 	Window      int
-	BatchTicks  int // optional time ticks per batch (for DFBA windowing), advisory
+	BatchTicks  int  // optional time ticks per batch (for DFBA windowing), advisory
+	UseDFBA     bool // when true, route selection through DFBA solver (behind flag)
 }
 
 // PrepareProposal selects payloads from a container following the policy.
 // It does not mutate the container; pools remain responsible for internal state.
 func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardBlock {
+	if pol.UseDFBA {
+		return prepareProposalDFBA(c, hdr, pol)
+	}
 	max := pol.MaxN
 	if max <= 0 {
 		max = 1024
@@ -57,6 +62,58 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 			metrics.Inc("builder_selected_total", map[string]string{"type": typ})
 		}
 		remain = max - len(res)
+	}
+	return StandardBlock{Header: hdr, Items: res}
+}
+
+// prepareProposalDFBA routes selection through the DFBA solver when enabled.
+// It preserves existing filtering semantics (time window + thresholds) and
+// uses DFBA only for per-type windowed ordering and capping.
+func prepareProposalDFBA(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardBlock {
+	max := pol.MaxN
+	if max <= 0 {
+		max = 1024
+	}
+	window := pol.Window
+	if window <= 0 || window > max {
+		window = max
+	}
+	now := time.Now()
+	windowDur := time.Duration(pol.BatchTicks) * time.Millisecond
+	items := make([]dfba.Item, 0, max)
+	for _, typ := range pol.Order {
+		cands := c.GetAll(typ)
+		filtered := filterByWindowAndThreshold(c, cands, typ, pol, now, windowDur)
+		if typ == "private_v1" && os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
+			filtered = decryptAndMapPrivate(filtered)
+		}
+		for _, p := range filtered {
+			if p == nil {
+				continue
+			}
+			items = append(items, dfba.Item{
+				Payload: p,
+				Type:    typ,
+				Key:     p.SortKey(),
+				Hash:    p.Hash(),
+			})
+		}
+	}
+	dfbaPol := dfba.Policy{
+		Order:      pol.Order,
+		MaxN:       max,
+		MinBid:     pol.MinBid,
+		MinFee:     pol.MinFee,
+		Window:     window,
+		BatchTicks: pol.BatchTicks,
+	}
+	out, _ := dfba.SolveDeterministic(dfba.SolverInput{Items: items, Policy: dfbaPol})
+	res := make([]Payload, 0, len(out.Selected))
+	for _, it := range out.Selected {
+		if plAny, ok := it.Payload.(Payload); ok && plAny != nil {
+			res = append(res, plAny)
+			metrics.Inc("builder_selected_total", map[string]string{"type": it.Type})
+		}
 	}
 	return StandardBlock{Header: hdr, Items: res}
 }
