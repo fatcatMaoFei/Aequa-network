@@ -51,7 +51,7 @@ Deployment
     - Enable deterministic builder (experimental, behind flag): add `--enable-builder` and optional `--builder.*` flags (see `cmd/dvt-node`).
     - Optional DFBA path (experimental): add `--builder.use-dfba` when builder is enabled to route selection through the DFBA solver.
   - Docker (4‑node minimal): `docker build -t aequa-local:latest . && docker compose -f deploy/testnet/docker-compose.yml up -d`
-  - Grafana: import `deploy/testnet/grafana/dashboard.json`; alert suggestions in `deploy/testnet/grafana/alerts.md`
+  - Grafana: import `deploy/testnet/grafana/dashboard.json`; alert suggestions in `deploy/testnet/grafana/alerts.md`. DFBA and BEAST experiments surface additional panels for `dfba_*`, `block_value_*`, `beast_decrypt_total`, `private_pool_in_total`, and `private_pool_size` when the corresponding flags are enabled.
 
 Cross‑device P2P (behind flag)
 1) Build image with the P2P tag:

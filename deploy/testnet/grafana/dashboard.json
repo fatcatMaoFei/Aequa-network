@@ -106,6 +106,102 @@
         {"expr": "tss_sessions_open", "legendFormat": "open"}
       ],
       "gridPos": {"x": 0, "y": 34, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "DFBA solve avg (ms)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "sum(rate(dfba_solve_ms_sum[5m])) / sum(rate(dfba_solve_ms_count[5m]))",
+          "legendFormat": "avg"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 34, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "DFBA solves by result (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (result)(rate(dfba_solve_total[5m]))",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 41, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "DFBA flows accepted/rejected (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (flow)(rate(dfba_accepted_total[5m]))",
+          "legendFormat": "accepted {{flow}}"
+        },
+        {
+          "expr": "sum by (flow,reason)(rate(dfba_rejected_total[5m]))",
+          "legendFormat": "rejected {{flow}} {{reason}}"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 41, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "DFBA clearing price",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "dfba_clearing_price",
+          "legendFormat": "clearing_price"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 48, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "Block value (bids vs fees)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "sum(rate(block_value_bids_sum[5m])) / sum(rate(block_value_bids_count[5m]))",
+          "legendFormat": "bids_avg"
+        },
+        {
+          "expr": "sum(rate(block_value_fees_sum[5m])) / sum(rate(block_value_fees_count[5m]))",
+          "legendFormat": "fees_avg"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 48, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "BEAST decrypt results (rps)",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (result)(rate(beast_decrypt_total[5m]))",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 55, "w": 12, "h": 7}
+    },
+    {
+      "type": "timeseries",
+      "title": "Private pool intake (rps) & size",
+      "datasource": {"type": "prometheus", "uid": "Prometheus"},
+      "targets": [
+        {
+          "expr": "sum by (result)(rate(private_pool_in_total[5m]))",
+          "legendFormat": "in {{result}}"
+        },
+        {
+          "expr": "private_pool_size",
+          "legendFormat": "size"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 55, "w": 12, "h": 7}
     }
   ],
   "refresh": "30s",
@@ -120,4 +216,3 @@
   "version": 1,
   "weekStart": ""
 }
-
