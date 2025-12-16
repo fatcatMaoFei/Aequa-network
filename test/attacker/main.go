@@ -29,6 +29,20 @@ type qbftMsg struct {
 // p2p request used by /e2e/p2p/connect|disconnect endpoints
 type p2pReq struct { ID string `json:"id"` }
 
+// txEnvelope is a minimal copy of the public TxEnvelope used by the tx API.
+type txEnvelope struct {
+    Type         string `json:"type,omitempty"`
+    From         string `json:"from"`
+    Nonce        uint64 `json:"nonce"`
+    Gas          uint64 `json:"gas,omitempty"`
+    Fee          uint64 `json:"fee,omitempty"`
+    Bid          uint64 `json:"bid,omitempty"`
+    FeeRecipient string `json:"fee_recipient,omitempty"`
+    Ciphertext   []byte `json:"ciphertext,omitempty"`
+    EphemeralKey []byte `json:"ephemeral_key,omitempty"`
+    TargetHeight uint64 `json:"target_height,omitempty"`
+}
+
 func postJSON(url string, v any) error {
     b, _ := json.Marshal(v)
     resp, err := http.Post(url, "application/json", bytes.NewReader(b))
@@ -116,6 +130,38 @@ func main() {
             counter++; if counter%200 == 0 { time.Sleep(2 * time.Second) }
         }
     }()
+
+    // optional BEAST/private_tx adversarial traffic against /v1/tx/plain
+    // controlled via ATTACK_BEAST=1 to keep default behaviour unchanged.
+    if os.Getenv("ATTACK_BEAST") == "1" {
+        epsTX := os.Getenv("ENDPOINTS_TX")
+        if epsTX == "" { epsTX = "http://aequa-node-0:4600" }
+        txTargets := splitNonEmpty(epsTX)
+        for i := range txTargets { txTargets[i] = strings.TrimRight(txTargets[i], "/") + "/v1/tx/plain" }
+
+        go func() {
+            ticker := time.NewTicker(2 * time.Second); defer ticker.Stop()
+            nonce := uint64(0)
+            for range ticker.C {
+                u := txTargets[r.Intn(len(txTargets))]
+                // random private_v1 ciphertext (may or may not be valid JSON / BEAST payload)
+                ciph := make([]byte, 48)
+                _, _ = rand.Read(ciph)
+                eph := make([]byte, 32)
+                _, _ = rand.Read(eph)
+                env := txEnvelope{
+                    Type:         "private_v1",
+                    From:         "attacker",
+                    Nonce:        nonce,
+                    Ciphertext:   ciph,
+                    EphemeralKey: eph,
+                    TargetHeight: 100,
+                }
+                _ = postJSON(u, env)
+                nonce++
+            }
+        }()
+    }
 
     select {}
 }
