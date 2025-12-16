@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/zmlAEQ/Aequa-network/internal/payload"
+	"github.com/zmlAEQ/Aequa-network/pkg/metrics"
 )
 
 // PrivateTx represents a BEAST-style encrypted transaction (stub).
@@ -38,22 +39,41 @@ func (t *PrivateTx) Validate() error {
 
 func (t *PrivateTx) SortKey() uint64 { return 0 }
 
-// Pool is a stub mempool for private transactions; it accepts all valid txs.
+// Pool is a stub mempool for private transactions with basic capacity and
+// duplicate guards to avoid unbounded growth.
 type Pool struct {
 	mu    sync.Mutex
 	items []payload.Payload
+	seen  map[string]struct{}
+	max   int
 }
 
-func New() *Pool { return &Pool{} }
+func New() *Pool { return &Pool{seen: map[string]struct{}{}, max: 4096} }
 
 func (p *Pool) Add(pl payload.Payload) error {
 	if tx, ok := pl.(*PrivateTx); ok {
 		if err := tx.Validate(); err != nil {
+			metrics.Inc("private_pool_in_total", map[string]string{"result": "invalid"})
 			return err
 		}
 		p.mu.Lock()
+		defer p.mu.Unlock()
+		if len(p.items) >= p.max {
+			metrics.Inc("private_pool_in_total", map[string]string{"result": "overflow"})
+			return errors.New("private pool overflow")
+		}
+		h := string(tx.Hash())
+		if p.seen == nil {
+			p.seen = map[string]struct{}{}
+		}
+		if _, exists := p.seen[h]; exists {
+			metrics.Inc("private_pool_in_total", map[string]string{"result": "dup"})
+			return errors.New("duplicate private tx")
+		}
 		p.items = append(p.items, tx)
-		p.mu.Unlock()
+		p.seen[h] = struct{}{}
+		metrics.Inc("private_pool_in_total", map[string]string{"result": "ok"})
+		metrics.SetGauge("private_pool_size", nil, int64(len(p.items)))
 		return nil
 	}
 	return nil
