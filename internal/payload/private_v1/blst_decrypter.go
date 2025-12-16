@@ -24,20 +24,27 @@ type blstDecrypter struct {
 	conf Config
 }
 
-func (d blstDecrypter) Decrypt(p payload.Payload) (payload.Payload, error) {
+func (d blstDecrypter) Decrypt(h payload.BlockHeader, p payload.Payload) (payload.Payload, error) {
 	tx, ok := p.(*PrivateTx)
 	if !ok {
 		return p, nil
 	}
 	if tx.TargetHeight == 0 {
-		return nil, errors.New("missing target height")
+		return nil, payload.ErrPrivateInvalid
+	}
+	if h.Height < tx.TargetHeight {
+		return nil, payload.ErrPrivateEarly
 	}
 	pt, err := beast.Decrypt(tx.Ciphertext)
 	if err != nil {
-		return nil, err
+		return nil, payload.ErrPrivateCipher
 	}
 	if len(pt) == 0 {
-		return nil, errors.New("empty plaintext")
+		return nil, payload.ErrPrivateEmpty
 	}
-	return decodeEnvelopeBytes(pt)
+	pl, err := decodeEnvelopeBytes(pt)
+	if err != nil {
+		return nil, payload.ErrPrivateDecode
+	}
+	return pl, nil
 }
