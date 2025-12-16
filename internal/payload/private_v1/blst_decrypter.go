@@ -15,6 +15,7 @@ func EnableBLSTDecrypt(conf Config) error {
 	if len(conf.GroupPubKey) == 0 {
 		return errors.New("missing group pubkey")
 	}
+	beast.SetEngine(beast.NewSymmetricEngine(conf.GroupPubKey))
 	payload.SetPrivateDecrypter(blstDecrypter{conf: conf})
 	return nil
 }
