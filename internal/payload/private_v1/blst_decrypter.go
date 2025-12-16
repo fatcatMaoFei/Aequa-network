@@ -36,12 +36,8 @@ func (d blstDecrypter) Decrypt(p payload.Payload) (payload.Payload, error) {
 	if err != nil {
 		return nil, err
 	}
-	// The decrypted payload mapping into sortable payloads (plaintext_v1 or
-	// auction_bid_v1) is performed downstream via the registered private
-	// decrypter hook; here we only ensure ciphertext can be opened under the
-	// configured BEAST engine.
 	if len(pt) == 0 {
 		return nil, errors.New("empty plaintext")
 	}
-	return p, nil
+	return decodeEnvelopeBytes(pt)
 }
