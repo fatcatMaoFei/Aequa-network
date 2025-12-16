@@ -1,6 +1,7 @@
 package dfba
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -108,6 +109,32 @@ func SolveDeterministic(in SolverInput) (Result, error) {
 		selected := selectPerType(byType, in.Policy.Order, max, window)
 		metrics.Inc("dfba_solve_total", map[string]string{"result": "fallback"})
 		return Result{Selected: selected}, nil
+	}
+	// Observability: record basic dual-flow accounting and a simple clearing price.
+	// Clearing price is defined here as min(bid_k, user_k) where k is the number
+	// of matched pairs. It is a placeholder and may evolve without changing the
+	// metric family or label set.
+	bStar := bids[k-1].Key
+	uStar := users[k-1].Key
+	cp := bStar
+	if uStar < cp {
+		cp = uStar
+	}
+	if cp > 0 {
+		if cp > math.MaxInt64 {
+			cp = math.MaxInt64
+		}
+		metrics.SetGauge("dfba_clearing_price", nil, int64(cp))
+	}
+	for i := 0; i < k; i++ {
+		metrics.Inc("dfba_accepted_total", map[string]string{"flow": "solver"})
+		metrics.Inc("dfba_accepted_total", map[string]string{"flow": "user"})
+	}
+	for i := k; i < len(bids); i++ {
+		metrics.Inc("dfba_rejected_total", map[string]string{"flow": "solver", "reason": "no_pair"})
+	}
+	for i := k; i < len(users); i++ {
+		metrics.Inc("dfba_rejected_total", map[string]string{"flow": "user", "reason": "no_pair"})
 	}
 
 	// Build selection grouped by type according to policy order.
