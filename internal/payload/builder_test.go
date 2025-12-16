@@ -143,3 +143,31 @@ func TestPrepareProposal_ArrivalOrderRespected(t *testing.T) {
 		t.Fatalf("expected higher sortkey first")
 	}
 }
+
+func TestPrepareProposal_DFBAFlagKeepsBehaviour(t *testing.T) {
+	pool := &dummyPool{}
+	c1 := payload.NewContainer(map[string]payload.TypedMempool{"plaintext_v1": pool})
+	_ = c1.Add(&dummyPayload{t: "plaintext_v1", key: 1})
+	_ = c1.Add(&dummyPayload{t: "plaintext_v1", key: 3})
+	_ = c1.Add(&dummyPayload{t: "plaintext_v1", key: 2})
+
+	pol := payload.BuilderPolicy{Order: []string{"plaintext_v1"}, MaxN: 3}
+	blkA := payload.PrepareProposal(c1, payload.BlockHeader{Height: 1, Round: 1}, pol)
+
+	pool2 := &dummyPool{}
+	c2 := payload.NewContainer(map[string]payload.TypedMempool{"plaintext_v1": pool2})
+	_ = c2.Add(&dummyPayload{t: "plaintext_v1", key: 1})
+	_ = c2.Add(&dummyPayload{t: "plaintext_v1", key: 3})
+	_ = c2.Add(&dummyPayload{t: "plaintext_v1", key: 2})
+	polDFBA := payload.BuilderPolicy{Order: []string{"plaintext_v1"}, MaxN: 3, UseDFBA: true}
+	blkB := payload.PrepareProposal(c2, payload.BlockHeader{Height: 1, Round: 1}, polDFBA)
+
+	if len(blkA.Items) != len(blkB.Items) {
+		t.Fatalf("dfba flag changed item count: %d vs %d", len(blkA.Items), len(blkB.Items))
+	}
+	for i := range blkA.Items {
+		if blkA.Items[i].SortKey() != blkB.Items[i].SortKey() {
+			t.Fatalf("dfba flag changed ordering at %d: %d vs %d", i, blkA.Items[i].SortKey(), blkB.Items[i].SortKey())
+		}
+	}
+}
