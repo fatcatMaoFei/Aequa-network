@@ -114,8 +114,7 @@ func prepareProposalDFBA(c *Container, hdr BlockHeader, pol BuilderPolicy) Stand
 	out, _ := dfba.SolveDeterministic(dfba.SolverInput{Items: items, Policy: dfbaPol})
 	selectedSet := map[string]struct{}{}
 	for _, it := range out.Selected {
-		h := string(it.Hash)
-		selectedSet[h] = struct{}{}
+		selectedSet[string(it.Hash)] = struct{}{}
 	}
 	res := make([]Payload, 0, len(out.Selected))
 	for _, it := range out.Selected {
@@ -126,8 +125,7 @@ func prepareProposalDFBA(c *Container, hdr BlockHeader, pol BuilderPolicy) Stand
 	}
 	// mark DFBA-specific drops for observability; reuse existing builder_reject_total
 	for _, it := range all {
-		h := string(it.Hash)
-		if _, ok := selectedSet[h]; !ok {
+		if _, ok := selectedSet[string(it.Hash)]; !ok {
 			metrics.Inc("builder_reject_total", map[string]string{"type": it.Type, "reason": "dfba_no_match"})
 		}
 	}
