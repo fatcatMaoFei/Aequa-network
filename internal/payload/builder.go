@@ -81,6 +81,7 @@ func prepareProposalDFBA(c *Container, hdr BlockHeader, pol BuilderPolicy) Stand
 	now := time.Now()
 	windowDur := time.Duration(pol.BatchTicks) * time.Millisecond
 	items := make([]dfba.Item, 0, max)
+	all := make([]dfba.Item, 0, max)
 	for _, typ := range pol.Order {
 		cands := c.GetAll(typ)
 		filtered := filterByWindowAndThreshold(c, cands, typ, pol, now, windowDur)
@@ -91,12 +92,15 @@ func prepareProposalDFBA(c *Container, hdr BlockHeader, pol BuilderPolicy) Stand
 			if p == nil {
 				continue
 			}
-			items = append(items, dfba.Item{
+			it := dfba.Item{
 				Payload: p,
 				Type:    typ,
 				Key:     p.SortKey(),
 				Hash:    p.Hash(),
-			})
+			}
+			// all holds every candidate that passed local filters
+			all = append(all, it)
+			items = append(items, it)
 		}
 	}
 	dfbaPol := dfba.Policy{
@@ -108,11 +112,21 @@ func prepareProposalDFBA(c *Container, hdr BlockHeader, pol BuilderPolicy) Stand
 		BatchTicks: pol.BatchTicks,
 	}
 	out, _ := dfba.SolveDeterministic(dfba.SolverInput{Items: items, Policy: dfbaPol})
+	selectedSet := map[string]struct{}{}
+	for _, it := range out.Selected {
+		selectedSet[string(it.Hash)] = struct{}{}
+	}
 	res := make([]Payload, 0, len(out.Selected))
 	for _, it := range out.Selected {
 		if plAny, ok := it.Payload.(Payload); ok && plAny != nil {
 			res = append(res, plAny)
 			metrics.Inc("builder_selected_total", map[string]string{"type": it.Type})
+		}
+	}
+	// mark DFBA-specific drops for observability; reuse existing builder_reject_total
+	for _, it := range all {
+		if _, ok := selectedSet[string(it.Hash)]; !ok {
+			metrics.Inc("builder_reject_total", map[string]string{"type": it.Type, "reason": "dfba_no_match"})
 		}
 	}
 	return StandardBlock{Header: hdr, Items: res}
