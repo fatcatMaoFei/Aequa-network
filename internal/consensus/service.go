@@ -36,6 +36,7 @@ type Service struct {
 	enableBuilder bool
 	pool          *pl.Container
 	policy        pl.BuilderPolicy
+	polConfigured bool
 	lastBlock     map[uint64]map[uint64]pl.StandardBlock
 	enableTSSSign bool
 	signer        TSSSigner
@@ -77,7 +78,10 @@ type TSSSigner interface {
 func (s *Service) SetPayloadContainer(c *pl.Container) { s.pool = c }
 
 // SetBuilderPolicy defines deterministic selection order/limits.
-func (s *Service) SetBuilderPolicy(p pl.BuilderPolicy) { s.policy = p }
+func (s *Service) SetBuilderPolicy(p pl.BuilderPolicy) {
+	s.policy = p
+	s.polConfigured = true
+}
 
 // SetTSSSigner injects an optional TSS signer used at commit when enabled.
 func (s *Service) SetTSSSigner(si TSSSigner) { s.signer = si }
@@ -114,17 +118,29 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 	// If builder is enabled but no policy configured, apply a safe default
 	// so plaintext_v1 can be deterministically selected in small steps.
-	if s.enableBuilder && len(s.policy.Order) == 0 {
-		order := []string{"auction_bid_v1", "plaintext_v1"}
-		if os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
-			order = append([]string{"private_v1"}, order...)
+	if s.enableBuilder {
+		if !s.polConfigured {
+			order := []string{"auction_bid_v1", "plaintext_v1"}
+			if os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
+				order = append([]string{"private_v1"}, order...)
+			}
+			s.policy = pl.BuilderPolicy{Order: order, MaxN: 1024}
+			metrics.Inc("builder_policy_total", map[string]string{"result": "default"})
+			logger.InfoJ("consensus_builder_policy", map[string]any{"result": "default", "order": s.policy.Order, "max_n": s.policy.MaxN})
+		} else {
+			if len(s.policy.Order) == 0 {
+				order := []string{"auction_bid_v1", "plaintext_v1"}
+				if os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
+					order = append([]string{"private_v1"}, order...)
+				}
+				s.policy.Order = order
+			}
+			if s.policy.MaxN <= 0 {
+				s.policy.MaxN = 1024
+			}
+			metrics.Inc("builder_policy_total", map[string]string{"result": "custom"})
+			logger.InfoJ("consensus_builder_policy", map[string]any{"result": "custom", "order": s.policy.Order, "max_n": s.policy.MaxN})
 		}
-		s.policy = pl.BuilderPolicy{Order: order, MaxN: 1024}
-		metrics.Inc("builder_policy_total", map[string]string{"result": "default"})
-		logger.InfoJ("consensus_builder_policy", map[string]any{"result": "default", "order": s.policy.Order, "max_n": s.policy.MaxN})
-	} else if s.enableBuilder {
-		metrics.Inc("builder_policy_total", map[string]string{"result": "custom"})
-		logger.InfoJ("consensus_builder_policy", map[string]any{"result": "custom", "order": s.policy.Order, "max_n": s.policy.MaxN})
 	}
 	// Start E2E attack/testing endpoint when built with tag "e2e" (no-op otherwise).
 	startE2E(s)
