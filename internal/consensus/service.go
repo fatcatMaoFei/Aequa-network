@@ -126,7 +126,7 @@ func (s *Service) Start(ctx context.Context) error {
 			}
 			s.policy = pl.BuilderPolicy{Order: order, MaxN: 1024}
 			metrics.Inc("builder_policy_total", map[string]string{"result": "default"})
-			logger.InfoJ("consensus_builder_policy", map[string]any{"result": "default", "order": s.policy.Order, "max_n": s.policy.MaxN})
+			logger.InfoJ("consensus_builder_policy", map[string]any{"result": "default", "order": s.policy.Order, "max_n": s.policy.MaxN, "use_dfba": s.policy.UseDFBA})
 		} else {
 			if len(s.policy.Order) == 0 {
 				order := []string{"auction_bid_v1", "plaintext_v1"}
@@ -139,7 +139,7 @@ func (s *Service) Start(ctx context.Context) error {
 				s.policy.MaxN = 1024
 			}
 			metrics.Inc("builder_policy_total", map[string]string{"result": "custom"})
-			logger.InfoJ("consensus_builder_policy", map[string]any{"result": "custom", "order": s.policy.Order, "max_n": s.policy.MaxN})
+			logger.InfoJ("consensus_builder_policy", map[string]any{"result": "custom", "order": s.policy.Order, "max_n": s.policy.MaxN, "use_dfba": s.policy.UseDFBA})
 		}
 	}
 	// Start E2E attack/testing endpoint when built with tag "e2e" (no-op otherwise).
