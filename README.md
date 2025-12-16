@@ -48,7 +48,8 @@ How To Test Voting (e2e + adversary‑agent)
 
 Deployment
   - Native binary: `go build -o bin/dvt-node ./cmd/dvt-node` then run `./bin/dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620`
-    - Enable deterministic builder/DFBA (experimental, behind flag): add `--enable-builder` and optional `--builder.*` flags (see `cmd/dvt-node`).
+    - Enable deterministic builder (experimental, behind flag): add `--enable-builder` and optional `--builder.*` flags (see `cmd/dvt-node`).
+    - Optional DFBA path (experimental): add `--builder.use-dfba` when builder is enabled to route selection through the DFBA solver.
   - Docker (4‑node minimal): `docker build -t aequa-local:latest . && docker compose -f deploy/testnet/docker-compose.yml up -d`
   - Grafana: import `deploy/testnet/grafana/dashboard.json`; alert suggestions in `deploy/testnet/grafana/alerts.md`
 
