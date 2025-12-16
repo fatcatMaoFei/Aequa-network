@@ -26,18 +26,24 @@ import (
 
 func main() {
 	var (
-		apiAddr     string
-		monAddr     string
-		upstream    string
-		enableTSS   bool
-		p2pEnable   bool
-		p2pListen   string
-		p2pBoot     string
-		p2pNAT      bool
-		feeSink     string
-		enableBeast bool
-		enableJSON  bool
-		beastConf   string
+		apiAddr        string
+		monAddr        string
+		upstream       string
+		enableTSS      bool
+		p2pEnable      bool
+		p2pListen      string
+		p2pBoot        string
+		p2pNAT         bool
+		feeSink        string
+		enableBeast    bool
+		enableJSON     bool
+		beastConf      string
+		enableBuilder  bool
+		builderMaxN    int
+		builderWindow  int
+		builderMinBid  uint64
+		builderMinFee  uint64
+		builderTicksMs int
 	)
 	flag.StringVar(&apiAddr, "validator-api", "127.0.0.1:4600", "Validator API listen address")
 	flag.StringVar(&monAddr, "monitoring", "127.0.0.1:4620", "Monitoring listen address")
@@ -51,6 +57,12 @@ func main() {
 	flag.BoolVar(&enableBeast, "enable-beast", false, "Enable BEAST private tx path (behind feature flag)")
 	flag.BoolVar(&enableJSON, "beast.json", false, "Enable dev-mode JSON decrypt for private_v1 (non-crypto, for testing only)")
 	flag.StringVar(&beastConf, "beast.conf", "", "Path to BEAST committee/group key config (optional, behind blst build tag)")
+	flag.BoolVar(&enableBuilder, "enable-builder", false, "Enable deterministic builder/DFBA path (behind feature flag)")
+	flag.IntVar(&builderMaxN, "builder.max-n", 0, "Optional cap for items per block (0 keeps default)")
+	flag.IntVar(&builderWindow, "builder.window", 0, "Optional per-type window (0 keeps default = MaxN)")
+	flag.Uint64Var(&builderMinBid, "builder.min-bid", 0, "Optional minimum bid for auction_bid_v1 (0 keeps default)")
+	flag.Uint64Var(&builderMinFee, "builder.min-fee", 0, "Optional minimum fee for plaintext_v1 (0 keeps default)")
+	flag.IntVar(&builderTicksMs, "builder.batch-ticks-ms", 0, "Optional batch window in milliseconds for DFBA selection (0 disables windowing)")
 	flag.Parse()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -78,6 +90,18 @@ func main() {
 		m.Add(tss.New(p2ps))
 	}
 	cons := consensus.NewWithSub(b.Subscribe())
+	// Optional deterministic builder/DFBA configuration (behind flag).
+	if enableBuilder {
+		os.Setenv("AEQUA_ENABLE_BUILDER", "1")
+		pol := payload.BuilderPolicy{
+			MaxN:       builderMaxN,
+			Window:     builderWindow,
+			MinBid:     builderMinBid,
+			MinFee:     builderMinFee,
+			BatchTicks: builderTicksMs,
+		}
+		cons.SetBuilderPolicy(pol)
+	}
 	// Optional fee sink (non-blocking)
 	if feeSink != "" {
 		cons.SetFeeSink(consensus.WebhookSink{URL: feeSink})
