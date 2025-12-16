@@ -90,7 +90,7 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
 	if t.subTx, err = t.tt.Subscribe(); err != nil {
 		return err
 	}
-	if cfg.EnableBeast {
+	if t.cfg.EnableBeast {
 		if t.ttPriv, err = ps.Join(wire.TopicTxPrivate); err == nil {
 			t.subTxPriv, _ = t.ttPriv.Subscribe()
 		}
@@ -114,7 +114,7 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
 	// receivers
 	go t.loopQBFT(ctx)
 	go t.loopTx(ctx)
-	if cfg.EnableBeast && t.subTxPriv != nil {
+	if t.cfg.EnableBeast && t.subTxPriv != nil {
 		go t.loopTxPriv(ctx)
 	}
 	logger.InfoJ("p2p_start", map[string]any{"result": "ok"})

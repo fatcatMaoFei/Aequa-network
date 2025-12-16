@@ -135,7 +135,7 @@ func main() {
 
 	// Start P2P transport (behind build tag); safe no-op without 'p2p' tag or when disabled.
 	if p2pEnable {
-		cfg := p2p.NetConfig{Enable: true, NAT: p2pNAT}
+		cfg := p2p.NetConfig{Enable: true, NAT: p2pNAT, EnableBeast: enableBeast}
 		if p2pListen != "" {
 			cfg.Listen = []string{p2pListen}
 		}
