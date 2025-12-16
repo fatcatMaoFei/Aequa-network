@@ -20,10 +20,20 @@ Quick start
 
 Notes
 
-- This setup does not enable TSS/BEAST/DFBA. It is meant for public testnet
+- This setup does not enable TSS/BEAST/DFBA by default. It is meant for public testnet
   onboarding and basic observability only.
 - For chaos/adversary tests, prefer the root-level docker-compose.yml.
 - Keep this file local-only; do not modify metrics/logging dimensions.
+
+Experimental: enable BEAST P2P path
+
+- Build image with the p2p tag and start a cluster as usual.
+- To enable BEAST private tx topic on a node, start `dvt-node` with both:
+  - `--enable-beast` (enables private_v1 path locally, still behind API/mempool flags)
+  - `--p2p.enable` and a `p2p`-tagged build, plus `--p2p.listen` / `--p2p.bootnodes` as needed.
+- When both flags are set, the P2P transport will additionally join the private tx topic
+  and gossip `private_v1` payloads over `aequa/tx/private/v1`. Existing metrics/log labels
+  remain unchanged; only new metric families are added if needed in future PRs.
 
 Optional: KeyShare encryption
 
