@@ -47,6 +47,7 @@ func main() {
 		builderTicksMs int
 		builderUseDFBA bool
 		beastThreshold bool
+		beastDKGConf   string
 	)
 	flag.StringVar(&apiAddr, "validator-api", "127.0.0.1:4600", "Validator API listen address")
 	flag.StringVar(&monAddr, "monitoring", "127.0.0.1:4620", "Monitoring listen address")
@@ -60,6 +61,7 @@ func main() {
 	flag.BoolVar(&enableBeast, "enable-beast", false, "Enable BEAST private tx path (behind feature flag)")
 	flag.BoolVar(&enableJSON, "beast.json", false, "Enable dev-mode JSON decrypt for private_v1 (non-crypto, for testing only)")
 	flag.StringVar(&beastConf, "beast.conf", "", "Path to BEAST committee/group key config (optional, behind blst build tag)")
+	flag.StringVar(&beastDKGConf, "beast.dkg.conf", "", "Path to BEAST DKG config (distributed DKG; requires -tags p2p,blst)")
 	flag.BoolVar(&enableBuilder, "enable-builder", false, "Enable deterministic builder path (behind feature flag)")
 	flag.IntVar(&builderMaxN, "builder.max-n", 0, "Optional cap for items per block (0 keeps default)")
 	flag.IntVar(&builderWindow, "builder.window", 0, "Optional per-type window (0 keeps default = MaxN)")
@@ -122,16 +124,23 @@ func main() {
 			if enableJSON {
 				private_v1.EnableLocalJSONDecrypt()
 			}
+			// DKG-based threshold mode installs the real decrypter once DKG is ready.
+			if beastDKGConf != "" {
+				beastThreshold = true
+			}
 			if beastConf != "" {
-				if conf, err := private_v1.LoadConfig(beastConf); err == nil {
-					beastThreshold = conf.Mode == "threshold" || conf.Threshold > 0
-					if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
-						logger.InfoJ("beast_config", map[string]any{"result": "skip", "reason": err.Error()})
+				// Ignore beast.conf when DKG is requested; DKG produces the group key and share.
+				if beastDKGConf == "" {
+					if conf, err := private_v1.LoadConfig(beastConf); err == nil {
+						beastThreshold = conf.Mode == "threshold" || conf.Threshold > 0
+						if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
+							logger.InfoJ("beast_config", map[string]any{"result": "skip", "reason": err.Error()})
+						} else {
+							logger.InfoJ("beast_config", map[string]any{"result": "loaded"})
+						}
 					} else {
-						logger.InfoJ("beast_config", map[string]any{"result": "loaded"})
+						logger.InfoJ("beast_config", map[string]any{"result": "error", "err": err.Error()})
 					}
-				} else {
-					logger.InfoJ("beast_config", map[string]any{"result": "error", "err": err.Error()})
 				}
 			}
 		}
@@ -141,7 +150,7 @@ func main() {
 
 	// Start P2P transport (behind build tag); safe no-op without 'p2p' tag or when disabled.
 	if p2pEnable {
-		cfg := p2p.NetConfig{Enable: true, NAT: p2pNAT, EnableBeast: enableBeast}
+		cfg := p2p.NetConfig{Enable: true, NAT: p2pNAT, EnableBeast: enableBeast, EnableTSSDKG: beastDKGConf != ""}
 		if p2pListen != "" {
 			cfg.Listen = []string{p2pListen}
 		}
@@ -171,6 +180,13 @@ func main() {
 			t.OnQBFT(func(m qbft.Message) {
 				b.Publish(ctx, bus.Event{Kind: bus.KindConsensus, Height: m.Height, Round: m.Round, Body: m, TraceID: m.TraceID})
 			})
+			// Ingest inbound tx gossip into the local mempool via bus.KindTx.
+			t.OnTx(func(pl payload.Payload) {
+				b.Publish(ctx, bus.Event{Kind: bus.KindTx, Body: pl, TraceID: ""})
+			})
+			if beastDKGConf != "" {
+				maybeStartBeastDKG(ctx, t, beastDKGConf)
+			}
 			if enableBeast && beastThreshold {
 				if bst, ok := t.(p2p.BeastShareTransport); ok {
 					private_v1.SetThresholdSharePublisher(func(ctx context.Context, height uint64, index int, share []byte) error {
