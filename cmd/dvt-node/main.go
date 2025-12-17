@@ -180,6 +180,10 @@ func main() {
 			t.OnQBFT(func(m qbft.Message) {
 				b.Publish(ctx, bus.Event{Kind: bus.KindConsensus, Height: m.Height, Round: m.Round, Body: m, TraceID: m.TraceID})
 			})
+			// Ingest inbound tx gossip into the local mempool via bus.KindTx.
+			t.OnTx(func(pl payload.Payload) {
+				b.Publish(ctx, bus.Event{Kind: bus.KindTx, Body: pl, TraceID: ""})
+			})
 			if beastDKGConf != "" {
 				maybeStartBeastDKG(ctx, t, beastDKGConf)
 			}
