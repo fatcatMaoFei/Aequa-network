@@ -12,12 +12,12 @@ const TopicTSSDKG = "aequa/tss/dkg/v1"
 type TSSDKG struct {
 	SessionID   string   `json:"session_id"`
 	Epoch       uint64   `json:"epoch"`
-	Type        string   `json:"type"` // "commitments"|"share"|"ack"|"complaint"
+	Type        string   `json:"type"` // "commitments"|"share"|"share_open"|"ack"|"complaint"
 	FromIndex   int      `json:"from_index"`
 	ToIndex     int      `json:"to_index,omitempty"`
 	Commitments [][]byte `json:"commitments,omitempty"` // compressed G1 points (48B each)
 	Nonce       []byte   `json:"nonce,omitempty"`       // AES-GCM nonce (12B) for share messages
 	Ciphertext  []byte   `json:"ciphertext,omitempty"`  // encrypted scalar share bytes (32B)
+	Share       []byte   `json:"share,omitempty"`       // plaintext scalar share bytes (32B) for complaint resolution
 	Sig         []byte   `json:"sig,omitempty"`         // ed25519 signature over unsigned message JSON
 }
-

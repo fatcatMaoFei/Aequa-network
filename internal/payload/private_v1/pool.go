@@ -3,6 +3,7 @@ package private_v1
 import (
 	"crypto/sha256"
 	"errors"
+	"os"
 	"sync"
 
 	"github.com/zmlAEQ/Aequa-network/internal/payload"
@@ -74,9 +75,11 @@ func (p *Pool) Add(pl payload.Payload) error {
 		p.seen[h] = struct{}{}
 		metrics.Inc("private_pool_in_total", map[string]string{"result": "ok"})
 		metrics.SetGauge("private_pool_size", nil, int64(len(p.items)))
-		// Best-effort: precompute and publish the per-height threshold share to
-		// reduce decrypt latency at TargetHeight (no-op without blst/threshold).
-		maybeEnsureShare(tx.TargetHeight)
+		// Optional (dev-only): precompute/publish threshold share at ingest.
+		// Disabled by default because it can leak decrypt shares before TargetHeight.
+		if os.Getenv("AEQUA_BEAST_EARLY_SHARE") == "1" {
+			maybeEnsureShare(tx.TargetHeight)
+		}
 		return nil
 	}
 	return nil

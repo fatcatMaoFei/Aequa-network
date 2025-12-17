@@ -44,6 +44,13 @@ type beastSessionState struct {
 	// Verified dealer->self shares as scalars (32B big-endian).
 	Shares map[int][]byte `json:"shares,omitempty"`
 
+	// Gossip state (best-effort resume).
+	Acks       map[int][]int `json:"acks,omitempty"`
+	Complaints map[int][]int `json:"complaints,omitempty"`
+
+	// Dealers disqualified by public evidence (invalid commitments/open share).
+	Disqualified []int `json:"disqualified,omitempty"`
+
 	// When done, cache outputs.
 	Done        bool   `json:"done,omitempty"`
 	GroupPubKey []byte `json:"group_pubkey,omitempty"`
