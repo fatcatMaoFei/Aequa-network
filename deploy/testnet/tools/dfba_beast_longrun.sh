@@ -13,8 +13,9 @@ RUNTIME_MIN="${RUNTIME_MIN:-120}"
 
 echo "[dfba-beast-longrun] using compose: ${DOCKER_COMPOSE_BIN}"
 echo "[dfba-beast-longrun] runtime (minutes): ${RUNTIME_MIN}"
+echo "[dfba-beast-longrun] ATTACK_BEAST=1 (adversary agent)"
 
-${DOCKER_COMPOSE_BIN} up --build -d
+ATTACK_BEAST=1 ${DOCKER_COMPOSE_BIN} up --build -d
 
 trap 'echo "[dfba-beast-longrun] stopping cluster"; ${DOCKER_COMPOSE_BIN} down -v || true' EXIT
 
@@ -23,9 +24,6 @@ sleep 60
 
 echo "[dfba-beast-longrun] running m4 health check"
 WAIT_SECS=60 bash ./.github/scripts/m4-health-check.sh || true
-
-echo "[dfba-beast-longrun] enabling BEAST attacker mode (ATTACK_BEAST=1)"
-docker exec adversary-agent /bin/sh -c 'export ATTACK_BEAST=1; echo "ATTACK_BEAST=1" > /tmp/attacker.env' || true
 
 TOTAL_SECS=$((RUNTIME_MIN * 60))
 STEP=60
@@ -37,4 +35,3 @@ while [ "${ELAPSED}" -lt "${TOTAL_SECS}" ]; do
 done
 
 echo "[dfba-beast-longrun] finished runtime window"
-
