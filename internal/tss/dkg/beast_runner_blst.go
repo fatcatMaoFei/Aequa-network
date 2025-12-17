@@ -67,9 +67,12 @@ type BeastDKGRunner struct {
 
 	commitments map[int][][]byte
 	shares      map[int]*blst.Scalar // dealer -> share for self
-	pending     map[int]wire.TSSDKG  // dealer -> share msg (waiting for commitments)
+	pendingShare map[int]wire.TSSDKG // dealer -> share msg (waiting for commitments)
+	pendingOpen  map[int]wire.TSSDKG // dealer -> open-share msg (waiting for commitments)
 
-	acks map[int]map[int]struct{} // dealer -> set(fromIndex)
+	acks       map[int]map[int]struct{} // dealer -> set(fromIndex) (ack sender indices)
+	complaints map[int]map[int]struct{} // dealer -> set(complainant indices)
+	badDealers map[int]struct{}         // disqualified dealers by public evidence
 
 	done   bool
 	result BeastDKGResult
@@ -100,8 +103,11 @@ func NewBeastDKGRunner(cfg BeastDKGConfig, tr p2p.TSSDKGTransport, opts ...Beast
 		epoch:       cfg.Epoch,
 		commitments: make(map[int][][]byte, cfg.N),
 		shares:      make(map[int]*blst.Scalar, cfg.N),
-		pending:     make(map[int]wire.TSSDKG),
-		acks:        make(map[int]map[int]struct{}, cfg.N),
+		pendingShare: make(map[int]wire.TSSDKG),
+		pendingOpen:  make(map[int]wire.TSSDKG),
+		acks:         make(map[int]map[int]struct{}, cfg.N),
+		complaints:   make(map[int]map[int]struct{}, cfg.N),
+		badDealers:   make(map[int]struct{}, cfg.N),
 		retryInterval: 2 * time.Second,
 	}
 	if r.epoch == 0 {
@@ -257,6 +263,35 @@ func (r *BeastDKGRunner) restore(st beastSessionState) error {
 			r.shares[idx] = &sc
 		}
 	}
+	if st.Acks != nil {
+		for dealer, froms := range st.Acks {
+			bucket := r.acks[dealer]
+			if bucket == nil {
+				bucket = map[int]struct{}{}
+				r.acks[dealer] = bucket
+			}
+			for _, from := range froms {
+				bucket[from] = struct{}{}
+			}
+		}
+	}
+	if st.Complaints != nil {
+		for dealer, froms := range st.Complaints {
+			bucket := r.complaints[dealer]
+			if bucket == nil {
+				bucket = map[int]struct{}{}
+				r.complaints[dealer] = bucket
+			}
+			for _, from := range froms {
+				bucket[from] = struct{}{}
+			}
+		}
+	}
+	for _, d := range st.Disqualified {
+		if d > 0 {
+			r.badDealers[d] = struct{}{}
+		}
+	}
 	// Ensure self share exists when we have local coefficients.
 	if len(r.coeffs) > 0 {
 		if _, ok := r.shares[r.cfg.Index]; !ok {
@@ -278,6 +313,9 @@ func (r *BeastDKGRunner) persistLocked() {
 		SelfCommitments: clone2D(r.selfCommitments),
 		Commitments:     cloneCommitmentsMap(r.commitments),
 		Shares:          cloneScalarMap(r.shares),
+		Acks:            cloneIndexSetMap(r.acks),
+		Complaints:      cloneIndexSetMap(r.complaints),
+		Disqualified:    cloneIndexSet(r.badDealers),
 		Done:            r.done,
 		GroupPubKey:     append([]byte(nil), r.result.GroupPubKey...),
 		ShareScalar:     append([]byte(nil), r.result.ShareScalar...),
@@ -331,6 +369,35 @@ func cloneScalarMap(in map[int]*blst.Scalar) map[int][]byte {
 			continue
 		}
 		out[k] = append([]byte(nil), v.Serialize()...)
+	}
+	return out
+}
+
+func cloneIndexSetMap(in map[int]map[int]struct{}) map[int][]int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[int][]int, len(in))
+	for k, set := range in {
+		if len(set) == 0 {
+			continue
+		}
+		arr := make([]int, 0, len(set))
+		for v := range set {
+			arr = append(arr, v)
+		}
+		out[k] = arr
+	}
+	return out
+}
+
+func cloneIndexSet(in map[int]struct{}) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(in))
+	for k := range in {
+		out = append(out, k)
 	}
 	return out
 }
@@ -469,20 +536,20 @@ func (r *BeastDKGRunner) broadcastCommitments(ctx context.Context) {
 }
 
 func (r *BeastDKGRunner) broadcastMissingShares(ctx context.Context) {
+	r.mu.Lock()
+	acks := r.acks[r.cfg.Index]
+	coeffs := r.coeffs
+	r.mu.Unlock()
+
 	for i := 1; i <= r.cfg.N; i++ {
 		if i == r.cfg.Index {
 			continue
 		}
-		r.mu.Lock()
-		acked := r.acks[r.cfg.Index] != nil
-		if acked {
-			if _, ok := r.acks[r.cfg.Index][i]; ok {
-				r.mu.Unlock()
+		if acks != nil {
+			if _, ok := acks[i]; ok {
 				continue
 			}
 		}
-		coeffs := r.coeffs
-		r.mu.Unlock()
 		if len(coeffs) == 0 {
 			continue
 		}
@@ -521,17 +588,34 @@ func (r *BeastDKGRunner) maybeFinalize(ctx context.Context) {
 	if r.done {
 		return
 	}
-	if len(r.commitments) < r.cfg.N || len(r.shares) < r.cfg.N {
+	qual := make([]int, 0, r.cfg.N)
+	for dealer := 1; dealer <= r.cfg.N; dealer++ {
+		if _, bad := r.badDealers[dealer]; bad {
+			continue
+		}
+		if len(r.commitments[dealer]) == 0 {
+			return
+		}
+		if c := r.complaints[dealer]; len(c) > 0 {
+			return
+		}
+		acks := r.acks[dealer]
+		if len(acks) < r.cfg.N-1 {
+			return
+		}
+		if r.shares[dealer] == nil {
+			return
+		}
+		qual = append(qual, dealer)
+	}
+	if len(qual) < r.cfg.Threshold {
 		return
 	}
 
-	// group pk = Σ commitments[idx][0]
+	// group pk = Σ commitments[dealer][0] for dealer in QUAL
 	acc := new(blst.P1)
-	for idx := 1; idx <= r.cfg.N; idx++ {
-		com := r.commitments[idx]
-		if len(com) == 0 {
-			return
-		}
+	for _, dealer := range qual {
+		com := r.commitments[dealer]
 		var aff blst.P1Affine
 		if aff.Uncompress(com[0]) == nil {
 			return
@@ -542,10 +626,10 @@ func (r *BeastDKGRunner) maybeFinalize(ctx context.Context) {
 	}
 	gpk := acc.ToAffine().Compress()
 
-	// share scalar = Σ shares[dealer]
+	// share scalar = Σ shares[dealer] for dealer in QUAL
 	sum := scalarFromInt(0)
-	for idx := 1; idx <= r.cfg.N; idx++ {
-		s := r.shares[idx]
+	for _, dealer := range qual {
+		s := r.shares[dealer]
 		if s == nil {
 			return
 		}
@@ -598,15 +682,30 @@ func (r *BeastDKGRunner) OnMessage(ctx context.Context, m wire.TSSDKG) {
 		}
 		r.onShare(ctx, m)
 		r.maybeFinalize(ctx)
+	case "share_open":
+		r.onShareOpen(ctx, m)
+		r.maybeFinalize(ctx)
 	case "ack":
 		r.onAck(m)
+		r.maybeFinalize(ctx)
 	case "complaint":
-		if m.ToIndex == r.cfg.Index {
-			// resend share to the complaining node on next retry tick
-			r.broadcastMissingShares(ctx)
-		}
+		r.onComplaint(ctx, m)
+		r.maybeFinalize(ctx)
 	default:
 	}
+}
+
+func (r *BeastDKGRunner) disqualifyDealerLocked(dealer int, reason string) {
+	if dealer <= 0 {
+		return
+	}
+	if _, ok := r.badDealers[dealer]; ok {
+		return
+	}
+	r.badDealers[dealer] = struct{}{}
+	delete(r.complaints, dealer)
+	logger.InfoJ("beast_dkg", map[string]any{"result": "dealer_disqualified", "dealer": dealer, "reason": reason})
+	metrics.Inc("beast_dkg_total", map[string]string{"result": "dealer_disqualified"})
 }
 
 func (r *BeastDKGRunner) onCommitments(m wire.TSSDKG) {
@@ -614,19 +713,34 @@ func (r *BeastDKGRunner) onCommitments(m wire.TSSDKG) {
 		return
 	}
 	if len(m.Commitments) != r.cfg.Threshold {
+		r.mu.Lock()
+		r.disqualifyDealerLocked(m.FromIndex, "bad_commitments_len")
+		r.persistLocked()
+		r.mu.Unlock()
 		return
 	}
 	for _, c := range m.Commitments {
 		if len(c) != 48 {
+			r.mu.Lock()
+			r.disqualifyDealerLocked(m.FromIndex, "bad_commitments_size")
+			r.persistLocked()
+			r.mu.Unlock()
 			return
 		}
 		var aff blst.P1Affine
 		if aff.Uncompress(c) == nil {
+			r.mu.Lock()
+			r.disqualifyDealerLocked(m.FromIndex, "bad_commitments_point")
+			r.persistLocked()
+			r.mu.Unlock()
 			return
 		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, bad := r.badDealers[m.FromIndex]; bad {
+		return
+	}
 	if _, ok := r.commitments[m.FromIndex]; ok {
 		return
 	}
@@ -636,20 +750,32 @@ func (r *BeastDKGRunner) onCommitments(m wire.TSSDKG) {
 
 func (r *BeastDKGRunner) tryProcessPending(ctx context.Context, dealer int) {
 	r.mu.Lock()
-	msg, ok := r.pending[dealer]
+	msg, ok := r.pendingShare[dealer]
 	r.mu.Unlock()
 	if !ok {
-		return
+		// continue to open-share below
+	} else {
+		r.onShare(ctx, msg)
 	}
-	r.onShare(ctx, msg)
+
+	r.mu.Lock()
+	open, ok2 := r.pendingOpen[dealer]
+	r.mu.Unlock()
+	if ok2 {
+		r.onShareOpen(ctx, open)
+	}
 }
 
 func (r *BeastDKGRunner) onShare(ctx context.Context, m wire.TSSDKG) {
 	r.mu.Lock()
+	if _, bad := r.badDealers[m.FromIndex]; bad {
+		r.mu.Unlock()
+		return
+	}
 	com := r.commitments[m.FromIndex]
 	if len(com) == 0 {
 		// wait for commitments
-		r.pending[m.FromIndex] = m
+		r.pendingShare[m.FromIndex] = m
 		r.mu.Unlock()
 		return
 	}
@@ -680,7 +806,7 @@ func (r *BeastDKGRunner) onShare(ctx context.Context, m wire.TSSDKG) {
 	}
 
 	r.mu.Lock()
-	delete(r.pending, m.FromIndex)
+	delete(r.pendingShare, m.FromIndex)
 	r.shares[m.FromIndex] = &sc
 	r.persistLocked()
 	r.mu.Unlock()
@@ -689,6 +815,22 @@ func (r *BeastDKGRunner) onShare(ctx context.Context, m wire.TSSDKG) {
 }
 
 func (r *BeastDKGRunner) broadcastAck(ctx context.Context, dealer int) {
+	r.mu.Lock()
+	bucket := r.acks[dealer]
+	if bucket == nil {
+		bucket = map[int]struct{}{}
+		r.acks[dealer] = bucket
+	}
+	bucket[r.cfg.Index] = struct{}{}
+	if c := r.complaints[dealer]; c != nil {
+		delete(c, r.cfg.Index)
+		if len(c) == 0 {
+			delete(r.complaints, dealer)
+		}
+	}
+	r.persistLocked()
+	r.mu.Unlock()
+
 	msg := wire.TSSDKG{
 		SessionID:  r.cfg.SessionID,
 		Epoch:      r.epoch,
@@ -704,6 +846,16 @@ func (r *BeastDKGRunner) broadcastAck(ctx context.Context, dealer int) {
 }
 
 func (r *BeastDKGRunner) broadcastComplaint(ctx context.Context, dealer int) {
+	r.mu.Lock()
+	bucket := r.complaints[dealer]
+	if bucket == nil {
+		bucket = map[int]struct{}{}
+		r.complaints[dealer] = bucket
+	}
+	bucket[r.cfg.Index] = struct{}{}
+	r.persistLocked()
+	r.mu.Unlock()
+
 	msg := wire.TSSDKG{
 		SessionID: r.cfg.SessionID,
 		Epoch:     r.epoch,
@@ -720,15 +872,142 @@ func (r *BeastDKGRunner) broadcastComplaint(ctx context.Context, dealer int) {
 }
 
 func (r *BeastDKGRunner) onAck(m wire.TSSDKG) {
-	if m.ToIndex != r.cfg.Index {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	dealer := m.ToIndex
+	if dealer <= 0 || dealer > r.cfg.N {
+		return
+	}
+	if _, bad := r.badDealers[dealer]; bad {
+		return
+	}
+	bucket := r.acks[dealer]
+	if bucket == nil {
+		bucket = map[int]struct{}{}
+		r.acks[dealer] = bucket
+	}
+	bucket[m.FromIndex] = struct{}{}
+	if c := r.complaints[dealer]; c != nil {
+		delete(c, m.FromIndex)
+		if len(c) == 0 {
+			delete(r.complaints, dealer)
+		}
+	}
+	r.persistLocked()
+}
+
+func (r *BeastDKGRunner) onComplaint(ctx context.Context, m wire.TSSDKG) {
+	dealer := m.ToIndex
+	if dealer <= 0 || dealer > r.cfg.N {
+		return
+	}
+	if dealer == r.cfg.Index {
+		// Resolve by opening the share to the complainant.
+		r.broadcastShareOpen(ctx, m.FromIndex)
 		return
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	bucket := r.acks[r.cfg.Index]
+	if _, bad := r.badDealers[dealer]; bad {
+		r.mu.Unlock()
+		return
+	}
+	bucket := r.complaints[dealer]
 	if bucket == nil {
 		bucket = map[int]struct{}{}
-		r.acks[r.cfg.Index] = bucket
+		r.complaints[dealer] = bucket
 	}
 	bucket[m.FromIndex] = struct{}{}
+	r.persistLocked()
+	r.mu.Unlock()
+}
+
+func (r *BeastDKGRunner) broadcastShareOpen(ctx context.Context, toIndex int) {
+	if toIndex <= 0 || toIndex > r.cfg.N || toIndex == r.cfg.Index {
+		return
+	}
+	r.mu.Lock()
+	coeffs := r.coeffs
+	r.mu.Unlock()
+	if len(coeffs) == 0 {
+		return
+	}
+	sh, err := evalPolyAt(coeffs, toIndex)
+	if err != nil {
+		return
+	}
+	msg := wire.TSSDKG{
+		SessionID:  r.cfg.SessionID,
+		Epoch:      r.epoch,
+		Type:       "share_open",
+		FromIndex:  r.cfg.Index,
+		ToIndex:    toIndex,
+		Share:      sh.Serialize(),
+	}
+	signed, err := r.signMessage(msg)
+	if err != nil {
+		return
+	}
+	_ = r.tr.BroadcastTSSDKG(ctx, signed)
+}
+
+func (r *BeastDKGRunner) onShareOpen(ctx context.Context, m wire.TSSDKG) {
+	if m.ToIndex <= 0 || m.ToIndex > r.cfg.N {
+		return
+	}
+	if len(m.Share) != 32 {
+		r.mu.Lock()
+		r.disqualifyDealerLocked(m.FromIndex, "bad_open_share_len")
+		r.persistLocked()
+		r.mu.Unlock()
+		return
+	}
+	r.mu.Lock()
+	if _, bad := r.badDealers[m.FromIndex]; bad {
+		r.mu.Unlock()
+		return
+	}
+	com := r.commitments[m.FromIndex]
+	if len(com) == 0 {
+		r.pendingOpen[m.FromIndex] = m
+		r.mu.Unlock()
+		return
+	}
+	r.mu.Unlock()
+	var sc blst.Scalar
+	if sc.Deserialize(m.Share) == nil {
+		r.mu.Lock()
+		r.disqualifyDealerLocked(m.FromIndex, "bad_open_share_scalar")
+		r.persistLocked()
+		r.mu.Unlock()
+		return
+	}
+	ok, err := verifyFeldmanShare(&sc, m.ToIndex, com)
+	if err != nil || !ok {
+		r.mu.Lock()
+		r.disqualifyDealerLocked(m.FromIndex, "bad_open_share_verify")
+		r.persistLocked()
+		r.mu.Unlock()
+		return
+	}
+
+	// Complaint resolved: clear complainant entry for this dealer.
+	r.mu.Lock()
+	delete(r.pendingOpen, m.FromIndex)
+	if c := r.complaints[m.FromIndex]; c != nil {
+		delete(c, m.ToIndex)
+		if len(c) == 0 {
+			delete(r.complaints, m.FromIndex)
+		}
+	}
+	if m.ToIndex == r.cfg.Index {
+		if _, exists := r.shares[m.FromIndex]; !exists {
+			r.shares[m.FromIndex] = &sc
+		}
+	}
+	r.persistLocked()
+	r.mu.Unlock()
+
+	if m.ToIndex == r.cfg.Index {
+		r.broadcastAck(ctx, m.FromIndex)
+	}
 }
