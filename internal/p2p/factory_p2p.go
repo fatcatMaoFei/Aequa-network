@@ -37,13 +37,16 @@ type Libp2pTransport struct {
 	tt        *pubsub.Topic
 	ttPriv    *pubsub.Topic
 	tbShare   *pubsub.Topic
+	tdkg      *pubsub.Topic
 	subQ      *pubsub.Subscription
 	subTx     *pubsub.Subscription
 	subTxPriv *pubsub.Subscription
 	subShare  *pubsub.Subscription
+	subDKG    *pubsub.Subscription
 	onQBFT    func(qbft.Message)
 	onTx      func(payload.Payload)
 	onShare   func(wire.BeastShare)
+	onDKG     func(wire.TSSDKG)
 }
 
 func (t *Libp2pTransport) Start(ctx context.Context) error {
@@ -100,6 +103,11 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
 			t.subShare, _ = t.tbShare.Subscribe()
 		}
 	}
+	if t.cfg.EnableTSSDKG {
+		if t.tdkg, err = ps.Join(wire.TopicTSSDKG); err == nil {
+			t.subDKG, _ = t.tdkg.Subscribe()
+		}
+	}
 
 	// connect bootnodes (best effort)
 	for _, b := range t.cfg.Bootnodes {
@@ -125,6 +133,9 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
 	if t.cfg.EnableBeast && t.subShare != nil {
 		go t.loopBeastShare(ctx)
 	}
+	if t.cfg.EnableTSSDKG && t.subDKG != nil {
+		go t.loopTSSDKG(ctx)
+	}
 	logger.InfoJ("p2p_start", map[string]any{"result": "ok"})
 	return nil
 }
@@ -142,6 +153,9 @@ func (t *Libp2pTransport) Stop(ctx context.Context) error {
 	if t.subShare != nil {
 		_ = t.subShare.Cancel()
 	}
+	if t.subDKG != nil {
+		_ = t.subDKG.Cancel()
+	}
 	if t.tq != nil {
 		_ = t.tq.Close()
 	}
@@ -153,6 +167,9 @@ func (t *Libp2pTransport) Stop(ctx context.Context) error {
 	}
 	if t.tbShare != nil {
 		_ = t.tbShare.Close()
+	}
+	if t.tdkg != nil {
+		_ = t.tdkg.Close()
 	}
 	if t.host != nil {
 		return t.host.Close()
@@ -208,6 +225,7 @@ func (t *Libp2pTransport) BroadcastTx(_ context.Context, pl payload.Payload) err
 func (t *Libp2pTransport) OnQBFT(fn func(qbft.Message))          { t.onQBFT = fn }
 func (t *Libp2pTransport) OnTx(fn func(payload.Payload))         { t.onTx = fn }
 func (t *Libp2pTransport) OnBeastShare(fn func(wire.BeastShare)) { t.onShare = fn }
+func (t *Libp2pTransport) OnTSSDKG(fn func(wire.TSSDKG))          { t.onDKG = fn }
 
 func (t *Libp2pTransport) BroadcastBeastShare(_ context.Context, msg wire.BeastShare) error {
 	if t.tbShare == nil {
@@ -223,6 +241,23 @@ func (t *Libp2pTransport) BroadcastBeastShare(_ context.Context, msg wire.BeastS
 	}
 	metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": wire.TopicBeastShare, "direction": "tx", "result": "ok"})
 	metrics.Inc(MetricP2PBytesTotal, map[string]string{"topic": wire.TopicBeastShare, "direction": "tx"})
+	return nil
+}
+
+func (t *Libp2pTransport) BroadcastTSSDKG(_ context.Context, msg wire.TSSDKG) error {
+	if t.tdkg == nil {
+		return errors.New("p2p not started")
+	}
+	b, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	if err := t.tdkg.Publish(context.Background(), b); err != nil {
+		metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": wire.TopicTSSDKG, "direction": "tx", "result": "error"})
+		return err
+	}
+	metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": wire.TopicTSSDKG, "direction": "tx", "result": "ok"})
+	metrics.Inc(MetricP2PBytesTotal, map[string]string{"topic": wire.TopicTSSDKG, "direction": "tx"})
 	return nil
 }
 
@@ -306,6 +341,26 @@ func (t *Libp2pTransport) loopBeastShare(ctx context.Context) {
 		metrics.Inc(MetricP2PBytesTotal, map[string]string{"topic": wire.TopicBeastShare, "direction": "rx"})
 		if t.onShare != nil {
 			t.onShare(w)
+		}
+	}
+}
+
+func (t *Libp2pTransport) loopTSSDKG(ctx context.Context) {
+	for {
+		m, err := t.subDKG.Next(ctx)
+		if err != nil {
+			return
+		}
+		b := m.Data
+		var w wire.TSSDKG
+		if err := json.Unmarshal(b, &w); err != nil {
+			metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": wire.TopicTSSDKG, "direction": "rx", "result": "decode_error"})
+			continue
+		}
+		metrics.Inc(MetricP2PMessagesTotal, map[string]string{"topic": wire.TopicTSSDKG, "direction": "rx", "result": "ok"})
+		metrics.Inc(MetricP2PBytesTotal, map[string]string{"topic": wire.TopicTSSDKG, "direction": "rx"})
+		if t.onDKG != nil {
+			t.onDKG(w)
 		}
 	}
 }

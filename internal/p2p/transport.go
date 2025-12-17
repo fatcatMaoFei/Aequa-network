@@ -37,12 +37,22 @@ type BeastShareTransport interface {
 	OnBeastShare(fn func(wire.BeastShare))
 }
 
+// TSSDKGTransport is an optional extension implemented by transports that
+// support BEAST/TSS DKG message gossip.
+type TSSDKGTransport interface {
+	// BroadcastTSSDKG publishes a DKG message to the DKG topic.
+	BroadcastTSSDKG(ctx context.Context, msg wire.TSSDKG) error
+	// OnTSSDKG registers a handler invoked on each inbound DKG message.
+	OnTSSDKG(fn func(wire.TSSDKG))
+}
+
 // NoopTransport is a stub implementation used when P2P is disabled.
 // It satisfies the interface without performing any network I/O.
 type NoopTransport struct {
 	onQBFT       func(qbft.Message)
 	onTx         func(payload.Payload)
 	onBeastShare func(wire.BeastShare)
+	onTSSDKG     func(wire.TSSDKG)
 }
 
 func (n *NoopTransport) Start(_ context.Context) error { return nil }
@@ -51,7 +61,9 @@ func (n *NoopTransport) Stop(_ context.Context) error  { return nil }
 func (n *NoopTransport) BroadcastQBFT(_ context.Context, _ qbft.Message) error          { return nil }
 func (n *NoopTransport) BroadcastTx(_ context.Context, _ payload.Payload) error         { return nil }
 func (n *NoopTransport) BroadcastBeastShare(_ context.Context, _ wire.BeastShare) error { return nil }
+func (n *NoopTransport) BroadcastTSSDKG(_ context.Context, _ wire.TSSDKG) error         { return nil }
 
 func (n *NoopTransport) OnQBFT(fn func(qbft.Message))          { n.onQBFT = fn }
 func (n *NoopTransport) OnTx(fn func(payload.Payload))         { n.onTx = fn }
 func (n *NoopTransport) OnBeastShare(fn func(wire.BeastShare)) { n.onBeastShare = fn }
+func (n *NoopTransport) OnTSSDKG(fn func(wire.TSSDKG))          { n.onTSSDKG = fn }

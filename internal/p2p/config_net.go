@@ -8,4 +8,5 @@ type NetConfig struct {
     Bootnodes  []string // multiaddrs to dial on start
     NAT        bool     // enable NAT port mapping if available
     EnableBeast bool    // enable BEAST private tx topic when true
+    EnableTSSDKG bool   // enable TSS/BEAST DKG topic when true
 }
