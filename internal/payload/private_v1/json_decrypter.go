@@ -1,8 +1,6 @@
 package private_v1
 
-import (
-	payload "github.com/zmlAEQ/Aequa-network/internal/payload"
-)
+import payload "github.com/zmlAEQ/Aequa-network/internal/payload"
 
 // jsonEnvelope is a minimal encoding of plaintext/auction tx fields carried inside Ciphertext.
 // This is a deterministic local-decrypt helper for testing and non-crypto environments.
@@ -18,12 +16,22 @@ type jsonEnvelope struct {
 
 type jsonDecrypter struct{}
 
-func (jsonDecrypter) Decrypt(p payload.Payload) (payload.Payload, error) {
+func (jsonDecrypter) Decrypt(h payload.BlockHeader, p payload.Payload) (payload.Payload, error) {
 	tx, ok := p.(*PrivateTx)
 	if !ok {
 		return p, nil
 	}
-	return decodeEnvelopeBytes(tx.Ciphertext)
+	if tx.TargetHeight == 0 {
+		return nil, payload.ErrPrivateInvalid
+	}
+	if h.Height < tx.TargetHeight {
+		return nil, payload.ErrPrivateEarly
+	}
+	pl, err := decodeEnvelopeBytes(tx.Ciphertext)
+	if err != nil {
+		return nil, payload.ErrPrivateDecode
+	}
+	return pl, nil
 }
 
 // EnableLocalJSONDecrypt switches the global decrypter to json-based decoding of Ciphertext.
