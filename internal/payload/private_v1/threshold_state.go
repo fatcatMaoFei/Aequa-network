@@ -1,3 +1,5 @@
+//go:build blst
+
 package private_v1
 
 import (
