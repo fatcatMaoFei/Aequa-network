@@ -4,9 +4,11 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"time"
 
 	"github.com/zmlAEQ/Aequa-network/internal/p2p"
+	private_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/private_v1"
 	"github.com/zmlAEQ/Aequa-network/internal/tss/dkg"
 	"github.com/zmlAEQ/Aequa-network/pkg/logger"
 	"github.com/zmlAEQ/Aequa-network/pkg/metrics"
@@ -40,6 +42,9 @@ func maybeStartBeastDKG(ctx context.Context, t p2p.Transport, confPath string) {
 		return
 	}
 
+	// Install a pending decrypter so private_v1 txs are not treated as "ok" by the noop path.
+	private_v1.EnableThresholdPending()
+
 	go func() {
 		tick := time.NewTicker(500 * time.Millisecond)
 		defer tick.Stop()
@@ -49,11 +54,27 @@ func maybeStartBeastDKG(ctx context.Context, t p2p.Transport, confPath string) {
 				return
 			case <-tick.C:
 				if res, ok := r.Result(); ok {
-					logger.InfoJ("beast_dkg", map[string]any{"result": "ready", "index": res.Index, "threshold": res.Threshold})
+					conf := private_v1.Config{
+						Mode:        "threshold",
+						GroupPubKey: append([]byte(nil), res.GroupPubKey...),
+						Threshold:   cfg.Threshold,
+						Index:       cfg.Index,
+						Share:       append([]byte(nil), res.ShareScalar...),
+					}
+					if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
+						logger.InfoJ("beast_dkg", map[string]any{"result": "decrypt_enable_error", "err": err.Error()})
+						metrics.Inc("beast_dkg_total", map[string]string{"result": "decrypt_enable_error"})
+						return
+					}
+					logger.InfoJ("beast_dkg", map[string]any{
+						"result":           "ready",
+						"index":            res.Index,
+						"threshold":        res.Threshold,
+						"group_pubkey_b64": base64.StdEncoding.EncodeToString(res.GroupPubKey),
+					})
 					return
 				}
 			}
 		}
 	}()
 }
-

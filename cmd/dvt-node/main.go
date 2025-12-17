@@ -124,16 +124,23 @@ func main() {
 			if enableJSON {
 				private_v1.EnableLocalJSONDecrypt()
 			}
+			// DKG-based threshold mode installs the real decrypter once DKG is ready.
+			if beastDKGConf != "" {
+				beastThreshold = true
+			}
 			if beastConf != "" {
-				if conf, err := private_v1.LoadConfig(beastConf); err == nil {
-					beastThreshold = conf.Mode == "threshold" || conf.Threshold > 0
-					if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
-						logger.InfoJ("beast_config", map[string]any{"result": "skip", "reason": err.Error()})
+				// Ignore beast.conf when DKG is requested; DKG produces the group key and share.
+				if beastDKGConf == "" {
+					if conf, err := private_v1.LoadConfig(beastConf); err == nil {
+						beastThreshold = conf.Mode == "threshold" || conf.Threshold > 0
+						if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
+							logger.InfoJ("beast_config", map[string]any{"result": "skip", "reason": err.Error()})
+						} else {
+							logger.InfoJ("beast_config", map[string]any{"result": "loaded"})
+						}
 					} else {
-						logger.InfoJ("beast_config", map[string]any{"result": "loaded"})
+						logger.InfoJ("beast_config", map[string]any{"result": "error", "err": err.Error()})
 					}
-				} else {
-					logger.InfoJ("beast_config", map[string]any{"result": "error", "err": err.Error()})
 				}
 			}
 		}
