@@ -235,6 +235,8 @@ func decryptAndMapPrivate(hdr BlockHeader, cands []Payload) []Payload {
 				recordDecryptMetric("early")
 			case errors.Is(err, ErrPrivateInvalid):
 				recordDecryptMetric("invalid")
+			case errors.Is(err, ErrPrivateNotReady):
+				recordDecryptMetric("not_ready")
 			case errors.Is(err, ErrPrivateCipher):
 				recordDecryptMetric("cipher_error")
 			case errors.Is(err, ErrPrivateEmpty):
@@ -258,17 +260,24 @@ func takeDeterministic(cands []Payload, need int, budget int) []Payload {
 		need = budget
 	}
 	sort.SliceStable(cands, func(i, j int) bool {
+		// Primary: SortKey desc; tie-breaker: Hash asc.
+		ki := cands[i].SortKey()
+		kj := cands[j].SortKey()
+		if ki != kj {
+			return ki > kj
+		}
 		ci := cands[i].Hash()
 		cj := cands[j].Hash()
-		// keep deterministic ordering based on hash as tie-breaker for stable sort
-		if len(ci) == len(cj) {
-			for k := range ci {
-				if ci[k] != cj[k] {
-					return ci[k] < cj[k]
-				}
+		n := len(ci)
+		if len(cj) < n {
+			n = len(cj)
+		}
+		for k := 0; k < n; k++ {
+			if ci[k] != cj[k] {
+				return ci[k] < cj[k]
 			}
 		}
-		return cands[i].SortKey() > cands[j].SortKey()
+		return len(ci) < len(cj)
 	})
 	if need <= 0 || need > len(cands) {
 		need = len(cands)

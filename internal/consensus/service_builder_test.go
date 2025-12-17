@@ -29,7 +29,7 @@ func TestService_BuilderRuns_WhenEnabled(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	// publish a single event -> should trigger builder path without panic
-	b.Publish(ctx, bus.Event{Kind: bus.KindDuty, Height: 1, Round: 1})
+	b.Publish(ctx, bus.Event{Kind: bus.KindDuty, Height: 1, Round: 0})
 	time.Sleep(30 * time.Millisecond)
 }
 
@@ -49,10 +49,10 @@ func TestService_BuilderUsesDefaultPolicy_WhenNoneProvided(t *testing.T) {
 	if err := s.Start(ctx); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	b.Publish(ctx, bus.Event{Kind: bus.KindDuty, Height: 2, Round: 1})
+	b.Publish(ctx, bus.Event{Kind: bus.KindDuty, Height: 2, Round: 0})
 	time.Sleep(50 * time.Millisecond)
 	// builder should have produced a block under default policy
-	if blk, ok := s.lastBlock[2][1]; !ok || len(blk.Items) == 0 {
+	if blk, ok := s.lastBlock[2][0]; !ok || len(blk.Items) == 0 {
 		t.Fatalf("expected default builder policy to select tx, got: %#v", blk)
 	}
 }

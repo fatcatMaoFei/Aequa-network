@@ -27,11 +27,12 @@ func (noopDecrypter) Decrypt(_ BlockHeader, p Payload) (Payload, error) { return
 
 // Sentinel errors used to categorize BEAST/private decrypt outcomes for metrics.
 var (
-	ErrPrivateInvalid = errors.New("private tx invalid")
-	ErrPrivateEarly   = errors.New("private tx early")
-	ErrPrivateCipher  = errors.New("private tx cipher error")
-	ErrPrivateEmpty   = errors.New("private tx empty")
-	ErrPrivateDecode  = errors.New("private tx decode error")
+	ErrPrivateInvalid  = errors.New("private tx invalid")
+	ErrPrivateEarly    = errors.New("private tx early")
+	ErrPrivateNotReady = errors.New("private tx decrypt not ready")
+	ErrPrivateCipher   = errors.New("private tx cipher error")
+	ErrPrivateEmpty    = errors.New("private tx empty")
+	ErrPrivateDecode   = errors.New("private tx decode error")
 )
 
 func recordDecryptMetric(result string) {

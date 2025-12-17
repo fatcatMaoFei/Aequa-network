@@ -110,9 +110,10 @@ func (s *Service) Start(ctx context.Context) error {
 	if s.sink == nil {
 		s.sink = noopSink{}
 	}
-	s.enableTSSSync = os.Getenv("AEQUA_ENABLE_TSS_STATE_SYNC") == "1"
-	s.enableBuilder = os.Getenv("AEQUA_ENABLE_BUILDER") == "1"
-	s.enableTSSSign = os.Getenv("AEQUA_ENABLE_TSS_SIGN") == "1"
+	// Env is a fallback; wiring/tests may pre-set these booleans.
+	s.enableTSSSync = s.enableTSSSync || os.Getenv("AEQUA_ENABLE_TSS_STATE_SYNC") == "1"
+	s.enableBuilder = s.enableBuilder || os.Getenv("AEQUA_ENABLE_BUILDER") == "1"
+	s.enableTSSSign = s.enableTSSSign || os.Getenv("AEQUA_ENABLE_TSS_SIGN") == "1"
 	if s.lastBlock == nil {
 		s.lastBlock = make(map[uint64]map[uint64]pl.StandardBlock)
 	}
