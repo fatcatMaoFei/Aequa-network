@@ -35,6 +35,18 @@ Experimental: enable BEAST P2P path
   and gossip `private_v1` payloads over `aequa/tx/private/v1`. Existing metrics/log labels
   remain unchanged; only new metric families are added if needed in future PRs.
 
+Experimental: BEAST threshold mode (DKG + batched decrypt shares)
+
+- Build with tags: `p2p,blst` (example: `docker build --build-arg BUILD_TAGS=p2p,blst -t aequa-p2p-blst:latest .`).
+- Start each node with:
+  - `--enable-beast`
+  - `--p2p.enable` (+ `--p2p.listen` / `--p2p.bootnodes`)
+  - `--beast.dkg.conf <path>` (per-node JSON config; contains committee pubkeys and node-specific privkeys)
+- Observability:
+  - DKG: `beast_dkg_total{result}` (e.g. `ok`, `epoch_bump`, `dealer_disqualified`)
+  - Decrypt path: `beast_decrypt_total{result}` (e.g. `ok`, `not_ready`, `early`, `cipher_error`)
+- Safety: share precompute on private tx ingest is disabled by default; do not enable early share publishing on public testnets.
+
 Experimental: deterministic builder + DFBA
 
 - Default off. To route selection through the deterministic builder, start nodes with:
