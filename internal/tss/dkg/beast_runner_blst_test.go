@@ -310,7 +310,107 @@ func TestBeastDKGRunner_DisqualifiesBadDealer(t *testing.T) {
 			encPub:  append([]byte(nil), encPub.Bytes()...),
 		}
 		committee = append(committee, BeastDKGMember{Index: i, SigPub: append([]byte(nil), sigPub...), EncPub: append([]byte(nil), encPub.Bytes()...)})
+}
+
+func TestBeastDKGRunner_AdoptsHigherEpoch(t *testing.T) {
+	const (
+		n = 2
+		k = 2
+	)
+
+	type keys struct {
+		sigPriv []byte
+		sigPub  []byte
+		encPriv []byte
+		encPub  []byte
 	}
+	nodeKeys := make(map[int]keys, n)
+	committee := make([]BeastDKGMember, 0, n)
+	for i := 1; i <= n; i++ {
+		sigPub, sigPriv, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("ed25519: %v", err)
+		}
+		encPriv, err := ecdh.X25519().GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatalf("x25519: %v", err)
+		}
+		encPub := encPriv.PublicKey()
+		nodeKeys[i] = keys{
+			sigPriv: append([]byte(nil), sigPriv...),
+			sigPub:  append([]byte(nil), sigPub...),
+			encPriv: append([]byte(nil), encPriv.Bytes()...),
+			encPub:  append([]byte(nil), encPub.Bytes()...),
+		}
+		committee = append(committee, BeastDKGMember{Index: i, SigPub: append([]byte(nil), sigPub...), EncPub: append([]byte(nil), encPub.Bytes()...)})
+	}
+
+	bus := &memDKGBus{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Node 2 starts on epoch 1; node 1 starts on epoch 2 and should cause node 2 to adopt.
+	dir2 := t.TempDir()
+	cfg2 := BeastDKGConfig{
+		SessionID:    "sess",
+		Epoch:        1,
+		N:            n,
+		Threshold:    k,
+		Index:        2,
+		KeySharePath: filepath.Join(dir2, "ks_2.dat"),
+		SigPriv:      nodeKeys[2].sigPriv,
+		EncPriv:      nodeKeys[2].encPriv,
+		Committee:    committee,
+	}
+	r2, err := NewBeastDKGRunner(cfg2, &memDKGTransport{bus: bus}, WithRetryInterval(10*time.Millisecond))
+	if err != nil {
+		t.Fatalf("runner[2]: %v", err)
+	}
+	if err := r2.Start(ctx); err != nil {
+		t.Fatalf("start[2]: %v", err)
+	}
+
+	dir1 := t.TempDir()
+	cfg1 := BeastDKGConfig{
+		SessionID:    "sess",
+		Epoch:        2,
+		N:            n,
+		Threshold:    k,
+		Index:        1,
+		KeySharePath: filepath.Join(dir1, "ks_1.dat"),
+		SigPriv:      nodeKeys[1].sigPriv,
+		EncPriv:      nodeKeys[1].encPriv,
+		Committee:    committee,
+	}
+	r1, err := NewBeastDKGRunner(cfg1, &memDKGTransport{bus: bus}, WithRetryInterval(10*time.Millisecond))
+	if err != nil {
+		t.Fatalf("runner[1]: %v", err)
+	}
+	if err := r1.Start(ctx); err != nil {
+		t.Fatalf("start[1]: %v", err)
+	}
+
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		_, ok1 := r1.Result()
+		_, ok2 := r2.Result()
+		if ok1 && ok2 {
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatalf("timeout waiting for epoch adoption")
+		case <-tick.C:
+		}
+	}
+
+	if r2.epoch != 2 {
+		t.Fatalf("node2 did not adopt epoch 2: got=%d", r2.epoch)
+	}
+}
 
 	bus := &memDKGBus{}
 	ctx, cancel := context.WithCancel(context.Background())

@@ -49,6 +49,14 @@ func WithRetryInterval(d time.Duration) BeastDKGRunnerOpt {
 	}
 }
 
+func WithEpochTimeout(d time.Duration) BeastDKGRunnerOpt {
+	return func(r *BeastDKGRunner) {
+		if d > 0 {
+			r.epochTimeout = d
+		}
+	}
+}
+
 // BeastDKGRunner runs a minimal Feldman DKG over an authenticated gossip channel.
 // It is designed for "silent setup": run once to derive the committee master key,
 // then reuse the per-node share for per-height BEAST decrypt shares.
@@ -75,9 +83,12 @@ type BeastDKGRunner struct {
 	badDealers map[int]struct{}         // disqualified dealers by public evidence
 
 	done   bool
+	finalizing bool
 	result BeastDKGResult
 
 	retryInterval time.Duration
+	epochTimeout  time.Duration
+	epochStart    time.Time
 }
 
 func NewBeastDKGRunner(cfg BeastDKGConfig, tr p2p.TSSDKGTransport, opts ...BeastDKGRunnerOpt) (*BeastDKGRunner, error) {
@@ -109,6 +120,8 @@ func NewBeastDKGRunner(cfg BeastDKGConfig, tr p2p.TSSDKGTransport, opts ...Beast
 		complaints:   make(map[int]map[int]struct{}, cfg.N),
 		badDealers:   make(map[int]struct{}, cfg.N),
 		retryInterval: 2 * time.Second,
+		epochTimeout:  60 * time.Second,
+		epochStart:    time.Now(),
 	}
 	if r.epoch == 0 {
 		r.epoch = 1
@@ -158,6 +171,9 @@ func (r *BeastDKGRunner) Start(ctx context.Context) error {
 	if err := r.ensureLocalPoly(); err != nil {
 		return err
 	}
+	if r.epochStart.IsZero() {
+		r.epochStart = time.Now()
+	}
 
 	// Broadcast our commitments and start periodic retries.
 	r.broadcastCommitments(ctx)
@@ -175,14 +191,57 @@ func (r *BeastDKGRunner) retryLoop(ctx context.Context) {
 		case <-t.C:
 			r.mu.Lock()
 			done := r.done
+			start := r.epochStart
+			timeout := r.epochTimeout
+			epoch := r.epoch
 			r.mu.Unlock()
 			if done {
 				return
+			}
+			if timeout > 0 && !start.IsZero() && time.Since(start) > timeout {
+				r.bumpEpoch(ctx, epoch+1, "timeout")
+				continue
 			}
 			r.broadcastCommitments(ctx)
 			r.broadcastMissingShares(ctx)
 		}
 	}
+}
+
+func (r *BeastDKGRunner) resetForEpochLocked(epoch uint64) {
+	r.epoch = epoch
+	r.coeffs = nil
+	r.selfCommitments = nil
+	r.commitments = make(map[int][][]byte, r.cfg.N)
+	r.shares = make(map[int]*blst.Scalar, r.cfg.N)
+	r.pendingShare = make(map[int]wire.TSSDKG)
+	r.pendingOpen = make(map[int]wire.TSSDKG)
+	r.acks = make(map[int]map[int]struct{}, r.cfg.N)
+	r.complaints = make(map[int]map[int]struct{}, r.cfg.N)
+	r.badDealers = make(map[int]struct{}, r.cfg.N)
+	r.done = false
+	r.finalizing = false
+	r.result = BeastDKGResult{}
+	r.epochStart = time.Now()
+}
+
+func (r *BeastDKGRunner) bumpEpoch(ctx context.Context, epoch uint64, reason string) {
+	if epoch == 0 {
+		return
+	}
+	r.mu.Lock()
+	if r.done || epoch <= r.epoch {
+		r.mu.Unlock()
+		return
+	}
+	r.resetForEpochLocked(epoch)
+	r.persistLocked()
+	r.mu.Unlock()
+
+	logger.InfoJ("beast_dkg", map[string]any{"result": "epoch_bump", "epoch": epoch, "reason": reason})
+	metrics.Inc("beast_dkg_total", map[string]string{"result": "epoch_bump"})
+	_ = r.ensureLocalPoly()
+	r.broadcastCommitments(ctx)
 }
 
 func (r *BeastDKGRunner) ensureLocalPoly() error {
@@ -218,6 +277,7 @@ func (r *BeastDKGRunner) ensureLocalPoly() error {
 	r.commitments[r.cfg.Index] = com
 	// Include self dealer share so final aggregation can complete without network.
 	r.shares[r.cfg.Index] = selfShare
+	r.epochStart = time.Now()
 	r.persistLocked()
 	return nil
 }
@@ -583,9 +643,23 @@ func (r *BeastDKGRunner) broadcastMissingShares(ctx context.Context) {
 }
 
 func (r *BeastDKGRunner) maybeFinalize(ctx context.Context) {
+	var bumpEpoch uint64
+	var gpk []byte
+	var shareScalar []byte
+	var epoch uint64
+	var idx int
+	var k int
+
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.done {
+	if r.done || r.finalizing {
+		r.mu.Unlock()
+		return
+	}
+	// If there aren't enough remaining dealers to reach threshold, reshare via epoch bump.
+	if (r.cfg.N - len(r.badDealers)) < r.cfg.Threshold {
+		bumpEpoch = r.epoch + 1
+		r.mu.Unlock()
+		r.bumpEpoch(ctx, bumpEpoch, "insufficient_qual")
 		return
 	}
 	qual := make([]int, 0, r.cfg.N)
@@ -594,21 +668,26 @@ func (r *BeastDKGRunner) maybeFinalize(ctx context.Context) {
 			continue
 		}
 		if len(r.commitments[dealer]) == 0 {
+			r.mu.Unlock()
 			return
 		}
 		if c := r.complaints[dealer]; len(c) > 0 {
+			r.mu.Unlock()
 			return
 		}
 		acks := r.acks[dealer]
 		if len(acks) < r.cfg.N-1 {
+			r.mu.Unlock()
 			return
 		}
 		if r.shares[dealer] == nil {
+			r.mu.Unlock()
 			return
 		}
 		qual = append(qual, dealer)
 	}
 	if len(qual) < r.cfg.Threshold {
+		r.mu.Unlock()
 		return
 	}
 
@@ -618,34 +697,51 @@ func (r *BeastDKGRunner) maybeFinalize(ctx context.Context) {
 		com := r.commitments[dealer]
 		var aff blst.P1Affine
 		if aff.Uncompress(com[0]) == nil {
+			r.mu.Unlock()
 			return
 		}
 		var p blst.P1
 		p.FromAffine(&aff)
 		acc.AddAssign(&p)
 	}
-	gpk := acc.ToAffine().Compress()
+	gpk = acc.ToAffine().Compress()
 
 	// share scalar = Σ shares[dealer] for dealer in QUAL
 	sum := scalarFromInt(0)
 	for _, dealer := range qual {
 		s := r.shares[dealer]
 		if s == nil {
+			r.mu.Unlock()
 			return
 		}
 		if _, ok := sum.AddAssign(s); !ok {
+			r.mu.Unlock()
 			return
 		}
 	}
-	shareScalar := sum.Serialize()
+	shareScalar = sum.Serialize()
 
-	// Persist keyshare and mark done.
-	_ = r.store.SaveKeyShare(ctx, KeyShare{Index: r.cfg.Index, PublicKey: gpk, PrivateKey: shareScalar})
+	// Finalize outside the lock to avoid blocking gossip handling on I/O.
+	r.finalizing = true
+	epoch = r.epoch
+	idx = r.cfg.Index
+	k = r.cfg.Threshold
+	r.mu.Unlock()
+
+	_ = r.store.SaveKeyShare(ctx, KeyShare{Index: idx, PublicKey: gpk, PrivateKey: shareScalar})
+
+	r.mu.Lock()
+	if r.done || r.epoch != epoch {
+		r.finalizing = false
+		r.mu.Unlock()
+		return
+	}
 	r.done = true
-	r.result = BeastDKGResult{Index: r.cfg.Index, Threshold: r.cfg.Threshold, GroupPubKey: gpk, ShareScalar: shareScalar}
+	r.result = BeastDKGResult{Index: idx, Threshold: k, GroupPubKey: gpk, ShareScalar: shareScalar}
 	r.persistLocked()
+	r.mu.Unlock()
 
-	logger.InfoJ("beast_dkg", map[string]any{"result": "ok", "index": r.cfg.Index, "threshold": r.cfg.Threshold})
+	logger.InfoJ("beast_dkg", map[string]any{"result": "ok", "index": idx, "threshold": k})
 	metrics.Inc("beast_dkg_total", map[string]string{"result": "ok"})
 }
 
@@ -653,7 +749,7 @@ func (r *BeastDKGRunner) OnMessage(ctx context.Context, m wire.TSSDKG) {
 	if m.SessionID != r.cfg.SessionID {
 		return
 	}
-	if m.Epoch != r.epoch || m.Epoch == 0 {
+	if m.Epoch == 0 {
 		return
 	}
 	if m.FromIndex <= 0 || m.FromIndex > r.cfg.N {
@@ -667,6 +763,25 @@ func (r *BeastDKGRunner) OnMessage(ctx context.Context, m wire.TSSDKG) {
 	}
 	if !r.verifySig(m) {
 		metrics.Inc("beast_dkg_total", map[string]string{"result": "bad_sig"})
+		return
+	}
+	r.mu.Lock()
+	done := r.done
+	curEpoch := r.epoch
+	r.mu.Unlock()
+	if done {
+		return
+	}
+	if m.Epoch < curEpoch {
+		return
+	}
+	if m.Epoch > curEpoch {
+		r.bumpEpoch(ctx, m.Epoch, "remote")
+	}
+	r.mu.Lock()
+	curEpoch = r.epoch
+	r.mu.Unlock()
+	if m.Epoch != curEpoch {
 		return
 	}
 
