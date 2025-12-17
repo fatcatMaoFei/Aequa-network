@@ -2,21 +2,54 @@
 
 package beast
 
-// NOTE: Placeholder for real BEAST threshold flows using blst or other crypto
-// libs. This file keeps the partial/aggregate APIs wired behind the 'beast'
-// build tag without changing default builds.
+import (
+	"bytes"
+	"errors"
+)
 
-// PartialDecrypt performs placeholder partial decrypt (stub).
+// NOTE: Threshold decrypt skeleton for BEAST flows. For the current symmetric
+// MVP, each participant is able to perform a full decrypt using the shared
+// Engine key; PartialDecrypt therefore returns a plaintext "share", and
+// AggregateDecrypt checks that all provided shares agree before returning the
+// reconstructed plaintext. This keeps the API and call-sites compatible with a
+// future true threshold implementation without changing default behaviour.
+
+// PartialDecrypt performs a single-party decrypt using the global Engine.
+// Callers are expected to collect shares from multiple parties and pass them
+// to AggregateDecrypt.
 func PartialDecrypt(cipher []byte) ([]byte, error) {
-	// TODO: replace with real partial decryption
-	return cipher, nil
+	pt, err := Decrypt(cipher)
+	if err != nil {
+		return nil, err
+	}
+	cp := make([]byte, len(pt))
+	copy(cp, pt)
+	return cp, nil
 }
 
-// AggregateDecrypt performs placeholder aggregate decrypt (stub).
+// AggregateDecrypt combines multiple partial decrypt shares into a single
+// plaintext. For the symmetric MVP, all shares must match byte-for-byte; any
+// mismatch results in an error.
 func AggregateDecrypt(parts [][]byte) ([]byte, error) {
-	// TODO: replace with real aggregate decryption
 	if len(parts) == 0 {
-		return nil, nil
+		return nil, ErrNotEnabled
 	}
-	return parts[0], nil
+	var base []byte
+	for _, p := range parts {
+		if len(p) == 0 {
+			continue
+		}
+		if base == nil {
+			base = make([]byte, len(p))
+			copy(base, p)
+			continue
+		}
+		if !bytes.Equal(base, p) {
+			return nil, errors.New("inconsistent partial decrypt shares")
+		}
+	}
+	if base == nil {
+		return nil, ErrNotEnabled
+	}
+	return base, nil
 }
