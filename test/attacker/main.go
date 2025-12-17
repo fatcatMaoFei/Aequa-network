@@ -3,6 +3,7 @@ package main
 import (
     "bytes"
     "crypto/rand"
+    "encoding/base64"
     "encoding/binary"
     "encoding/json"
     "fmt"
@@ -28,6 +29,14 @@ type qbftMsg struct {
 
 // p2p request used by /e2e/p2p/connect|disconnect endpoints
 type p2pReq struct { ID string `json:"id"` }
+
+// duty envelope used by /v1/duty endpoint
+type dutyEnv struct {
+    Type   string `json:"type"`
+    Height uint64 `json:"height"`
+    Round  uint64 `json:"round"`
+    Payload any   `json:"payload,omitempty"`
+}
 
 // txEnvelope is a minimal copy of the public TxEnvelope used by the tx API.
 type txEnvelope struct {
@@ -134,28 +143,64 @@ func main() {
     // optional BEAST/private_tx adversarial traffic against /v1/tx/plain
     // controlled via ATTACK_BEAST=1 to keep default behaviour unchanged.
     if os.Getenv("ATTACK_BEAST") == "1" {
+        // best-effort group pubkey for valid BEAST encryption (base64). If missing
+        // or invalid, fallback to random bytes (still exercises share gossip).
+        var groupPubKey []byte
+        if b64 := os.Getenv("BEAST_GROUP_PUBKEY_B64"); b64 != "" {
+            if b, err := base64.StdEncoding.DecodeString(b64); err == nil {
+                groupPubKey = b
+            }
+        }
+
         epsTX := os.Getenv("ENDPOINTS_TX")
         if epsTX == "" { epsTX = "http://aequa-node-0:4600" }
         txTargets := splitNonEmpty(epsTX)
         for i := range txTargets { txTargets[i] = strings.TrimRight(txTargets[i], "/") + "/v1/tx/plain" }
+
+        epsDuty := os.Getenv("ENDPOINTS_DUTY")
+        if epsDuty == "" { epsDuty = os.Getenv("ENDPOINTS_TX") }
+        if epsDuty == "" { epsDuty = "http://aequa-node-0:4600" }
+        dutyTargets := splitNonEmpty(epsDuty)
+        for i := range dutyTargets { dutyTargets[i] = strings.TrimRight(dutyTargets[i], "/") + "/v1/duty" }
+
+        // drive the builder by sending synthetic duties (cycles heights 1..10).
+        go func() {
+            ticker := time.NewTicker(1 * time.Second); defer ticker.Stop()
+            h := uint64(1)
+            for range ticker.C {
+                u := dutyTargets[r.Intn(len(dutyTargets))]
+                _ = postJSON(u, dutyEnv{Type: "proposer", Height: h, Round: 0, Payload: map[string]any{}})
+                h++
+                if h > 10 { h = 1 }
+            }
+        }()
 
         go func() {
             ticker := time.NewTicker(2 * time.Second); defer ticker.Stop()
             nonce := uint64(0)
             for range ticker.C {
                 u := txTargets[r.Intn(len(txTargets))]
-                // random private_v1 ciphertext (may or may not be valid JSON / BEAST payload)
-                ciph := make([]byte, 48)
-                _, _ = rand.Read(ciph)
-                eph := make([]byte, 32)
-                _, _ = rand.Read(eph)
+                target := uint64(1 + (nonce % 10))
+
+                // inner payload envelope (plaintext_v1 by default)
+                inner, _ := json.Marshal(txEnvelope{Type: "plaintext_v1", From: "user", Nonce: nonce, Gas: 21000, Fee: 1})
+
+                // Try valid IBE encryption if groupPubKey present and built with -tags blst.
+                eph, ciph, err := beastEncrypt(groupPubKey, target, inner)
+                if err != nil || len(eph) == 0 || len(ciph) == 0 {
+                    // fallback: random private_v1 ciphertext (may be invalid)
+                    ciph = make([]byte, 48)
+                    _, _ = rand.Read(ciph)
+                    eph = make([]byte, 32)
+                    _, _ = rand.Read(eph)
+                }
                 env := txEnvelope{
                     Type:         "private_v1",
                     From:         "attacker",
                     Nonce:        nonce,
                     Ciphertext:   ciph,
                     EphemeralKey: eph,
-                    TargetHeight: 100,
+                    TargetHeight: target,
                 }
                 _ = postJSON(u, env)
                 nonce++
