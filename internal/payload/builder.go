@@ -54,7 +54,7 @@ func PrepareProposal(c *Container, hdr BlockHeader, pol BuilderPolicy) StandardB
 		cands := c.GetAll(typ)
 		filtered := filterByWindowAndThreshold(c, cands, typ, pol, now, windowDur)
 		if typ == "private_v1" && os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
-			filtered = decryptAndMapPrivate(filtered)
+			filtered = decryptAndMapPrivate(hdr, filtered)
 		}
 		selected := takeDeterministic(filtered, need, max-len(res))
 		res = append(res, selected...)
@@ -86,7 +86,7 @@ func prepareProposalDFBA(c *Container, hdr BlockHeader, pol BuilderPolicy) Stand
 		cands := c.GetAll(typ)
 		filtered := filterByWindowAndThreshold(c, cands, typ, pol, now, windowDur)
 		if typ == "private_v1" && os.Getenv("AEQUA_ENABLE_BEAST") == "1" {
-			filtered = decryptAndMapPrivate(filtered)
+			filtered = decryptAndMapPrivate(hdr, filtered)
 		}
 		for _, p := range filtered {
 			if p == nil {
@@ -213,26 +213,41 @@ func filterByWindowAndThreshold(c *Container, cands []Payload, typ string, pol B
 	return filtered
 }
 
-// decryptAndMapPrivate: placeholder for BEAST decrypt + mapping into sortable payload.
-func decryptAndMapPrivate(cands []Payload) []Payload {
-	// TODO: integrate beast decrypt and mapping to plaintext/auction payloads.
-	// For now, use the registered decrypter (noop by default) to keep the path wired.
+// decryptAndMapPrivate: BEAST decrypt + mapping into sortable payload, with basic
+// error categorisation for observability. Metrics use result label values:
+// - ok            : successful decrypt + mapping
+// - early         : TargetHeight not yet reached
+// - invalid       : malformed private tx envelope (e.g. missing TargetHeight)
+// - cipher_error  : BEAST engine decrypt failure
+// - empty         : empty plaintext after decrypt
+// - decode_error  : JSON decode / payload mapping error
+// - error         : any other error
+func decryptAndMapPrivate(hdr BlockHeader, cands []Payload) []Payload {
 	out := make([]Payload, 0, len(cands))
 	for _, p := range cands {
 		if p == nil {
 			continue
 		}
-		dec, err := privateDecrypter.Decrypt(p)
+		dec, err := privateDecrypter.Decrypt(hdr, p)
 		if err != nil || dec == nil {
-			recordDecryptMetric("error")
+			switch {
+			case errors.Is(err, ErrPrivateEarly):
+				recordDecryptMetric("early")
+			case errors.Is(err, ErrPrivateInvalid):
+				recordDecryptMetric("invalid")
+			case errors.Is(err, ErrPrivateCipher):
+				recordDecryptMetric("cipher_error")
+			case errors.Is(err, ErrPrivateEmpty):
+				recordDecryptMetric("empty")
+			case errors.Is(err, ErrPrivateDecode):
+				recordDecryptMetric("decode_error")
+			default:
+				recordDecryptMetric("error")
+			}
 			continue
 		}
-		out = append(out, dec)
-	}
-	if len(out) == 0 {
-		recordDecryptMetric("empty")
-	} else {
 		recordDecryptMetric("ok")
+		out = append(out, dec)
 	}
 	return out
 }

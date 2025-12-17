@@ -11,7 +11,7 @@ type fakeDecrypter struct {
 	err    error
 }
 
-func (f *fakeDecrypter) Decrypt(p Payload) (Payload, error) {
+func (f *fakeDecrypter) Decrypt(_ BlockHeader, p Payload) (Payload, error) {
 	f.called++
 	return f.ret, f.err
 }
@@ -21,7 +21,7 @@ func TestDecryptAndMapPrivate_UsesDecrypter(t *testing.T) {
 	defer SetPrivateDecrypter(nil) // reset to noop
 	fk := &fakeDecrypter{ret: &testPayload{t: "private_v1", key: 1}}
 	SetPrivateDecrypter(fk)
-	out := decryptAndMapPrivate([]Payload{&testPayload{t: "private_v1", key: 1}})
+	out := decryptAndMapPrivate(BlockHeader{Height: 10}, []Payload{&testPayload{t: "private_v1", key: 1}})
 	if fk.called != 1 {
 		t.Fatalf("expected decrypter to be called once, got %d", fk.called)
 	}
@@ -35,7 +35,7 @@ func TestDecryptAndMapPrivate_ErrorsDropped(t *testing.T) {
 	defer SetPrivateDecrypter(nil) // reset to noop
 	fk := &fakeDecrypter{ret: nil, err: errTest}
 	SetPrivateDecrypter(fk)
-	out := decryptAndMapPrivate([]Payload{&testPayload{t: "private_v1", key: 1}})
+	out := decryptAndMapPrivate(BlockHeader{Height: 10}, []Payload{&testPayload{t: "private_v1", key: 1}})
 	if len(out) != 0 {
 		t.Fatalf("expected dropped payload on error, got %d", len(out))
 	}
