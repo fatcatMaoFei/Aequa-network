@@ -39,6 +39,16 @@ type BeastDKGResult struct {
 	ShareScalar []byte
 }
 
+type BeastDKGRunnerOpt func(*BeastDKGRunner)
+
+func WithRetryInterval(d time.Duration) BeastDKGRunnerOpt {
+	return func(r *BeastDKGRunner) {
+		if d > 0 {
+			r.retryInterval = d
+		}
+	}
+}
+
 // BeastDKGRunner runs a minimal Feldman DKG over an authenticated gossip channel.
 // It is designed for "silent setup": run once to derive the committee master key,
 // then reuse the per-node share for per-height BEAST decrypt shares.
@@ -63,9 +73,11 @@ type BeastDKGRunner struct {
 
 	done   bool
 	result BeastDKGResult
+
+	retryInterval time.Duration
 }
 
-func NewBeastDKGRunner(cfg BeastDKGConfig, tr p2p.TSSDKGTransport) (*BeastDKGRunner, error) {
+func NewBeastDKGRunner(cfg BeastDKGConfig, tr p2p.TSSDKGTransport, opts ...BeastDKGRunnerOpt) (*BeastDKGRunner, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -90,9 +102,15 @@ func NewBeastDKGRunner(cfg BeastDKGConfig, tr p2p.TSSDKGTransport) (*BeastDKGRun
 		shares:      make(map[int]*blst.Scalar, cfg.N),
 		pending:     make(map[int]wire.TSSDKG),
 		acks:        make(map[int]map[int]struct{}, cfg.N),
+		retryInterval: 2 * time.Second,
 	}
 	if r.epoch == 0 {
 		r.epoch = 1
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(r)
+		}
 	}
 	return r, nil
 }
@@ -142,7 +160,7 @@ func (r *BeastDKGRunner) Start(ctx context.Context) error {
 }
 
 func (r *BeastDKGRunner) retryLoop(ctx context.Context) {
-	t := time.NewTicker(2 * time.Second)
+	t := time.NewTicker(r.retryInterval)
 	defer t.Stop()
 	for {
 		select {
@@ -595,8 +613,15 @@ func (r *BeastDKGRunner) onCommitments(m wire.TSSDKG) {
 	if len(m.Commitments) == 0 {
 		return
 	}
+	if len(m.Commitments) != r.cfg.Threshold {
+		return
+	}
 	for _, c := range m.Commitments {
 		if len(c) != 48 {
+			return
+		}
+		var aff blst.P1Affine
+		if aff.Uncompress(c) == nil {
 			return
 		}
 	}

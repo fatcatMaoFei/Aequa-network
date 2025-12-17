@@ -68,6 +68,12 @@ func (c BeastDKGConfig) Validate() error {
 	if c.Index <= 0 || c.Index > c.N {
 		return errors.New("invalid index")
 	}
+	if len(c.SigPriv) != 64 {
+		return errors.New("invalid sig_priv")
+	}
+	if len(c.EncPriv) != 32 {
+		return errors.New("invalid enc_priv")
+	}
 	if len(c.Committee) != c.N {
 		return errors.New("committee size mismatch")
 	}
@@ -79,8 +85,13 @@ func (c BeastDKGConfig) Validate() error {
 		if _, ok := seen[m.Index]; ok {
 			return errors.New("duplicate committee index")
 		}
+		if len(m.SigPub) != 32 {
+			return errors.New("invalid committee sig_pub")
+		}
+		if len(m.EncPub) != 32 {
+			return errors.New("invalid committee enc_pub")
+		}
 		seen[m.Index] = struct{}{}
 	}
 	return nil
 }
-

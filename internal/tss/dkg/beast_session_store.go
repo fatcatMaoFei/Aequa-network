@@ -67,7 +67,6 @@ func writeBeastSession(path string, st beastSessionState) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	var hdr [4 + 2 + 2 + 4 + 4]byte
 	off := 0
@@ -82,12 +81,15 @@ func writeBeastSession(path string, st beastSessionState) error {
 	binary.BigEndian.PutUint32(hdr[off:], crc32.ChecksumIEEE(body))
 
 	if _, err := f.Write(hdr[:]); err != nil {
+		_ = f.Close()
 		return err
 	}
 	if _, err := f.Write(body); err != nil {
+		_ = f.Close()
 		return err
 	}
 	if err := f.Sync(); err != nil {
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
@@ -153,4 +155,3 @@ func (s *BeastSessionStore) Load(sessionID string) (beastSessionState, error) {
 	}
 	return beastSessionState{}, ErrBeastSessionNotFound
 }
-
