@@ -47,6 +47,7 @@ func main() {
 		builderTicksMs int
 		builderUseDFBA bool
 		beastThreshold bool
+		beastDKGConf   string
 	)
 	flag.StringVar(&apiAddr, "validator-api", "127.0.0.1:4600", "Validator API listen address")
 	flag.StringVar(&monAddr, "monitoring", "127.0.0.1:4620", "Monitoring listen address")
@@ -60,6 +61,7 @@ func main() {
 	flag.BoolVar(&enableBeast, "enable-beast", false, "Enable BEAST private tx path (behind feature flag)")
 	flag.BoolVar(&enableJSON, "beast.json", false, "Enable dev-mode JSON decrypt for private_v1 (non-crypto, for testing only)")
 	flag.StringVar(&beastConf, "beast.conf", "", "Path to BEAST committee/group key config (optional, behind blst build tag)")
+	flag.StringVar(&beastDKGConf, "beast.dkg.conf", "", "Path to BEAST DKG config (distributed DKG; requires -tags p2p,blst)")
 	flag.BoolVar(&enableBuilder, "enable-builder", false, "Enable deterministic builder path (behind feature flag)")
 	flag.IntVar(&builderMaxN, "builder.max-n", 0, "Optional cap for items per block (0 keeps default)")
 	flag.IntVar(&builderWindow, "builder.window", 0, "Optional per-type window (0 keeps default = MaxN)")
@@ -141,7 +143,7 @@ func main() {
 
 	// Start P2P transport (behind build tag); safe no-op without 'p2p' tag or when disabled.
 	if p2pEnable {
-		cfg := p2p.NetConfig{Enable: true, NAT: p2pNAT, EnableBeast: enableBeast}
+		cfg := p2p.NetConfig{Enable: true, NAT: p2pNAT, EnableBeast: enableBeast, EnableTSSDKG: beastDKGConf != ""}
 		if p2pListen != "" {
 			cfg.Listen = []string{p2pListen}
 		}
@@ -171,6 +173,9 @@ func main() {
 			t.OnQBFT(func(m qbft.Message) {
 				b.Publish(ctx, bus.Event{Kind: bus.KindConsensus, Height: m.Height, Round: m.Round, Body: m, TraceID: m.TraceID})
 			})
+			if beastDKGConf != "" {
+				maybeStartBeastDKG(ctx, t, beastDKGConf)
+			}
 			if enableBeast && beastThreshold {
 				if bst, ok := t.(p2p.BeastShareTransport); ok {
 					private_v1.SetThresholdSharePublisher(func(ctx context.Context, height uint64, index int, share []byte) error {
