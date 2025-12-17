@@ -13,6 +13,7 @@ import (
 	qbft "github.com/zmlAEQ/Aequa-network/internal/consensus/qbft"
 	"github.com/zmlAEQ/Aequa-network/internal/monitoring"
 	"github.com/zmlAEQ/Aequa-network/internal/p2p"
+	"github.com/zmlAEQ/Aequa-network/internal/p2p/wire"
 	payload "github.com/zmlAEQ/Aequa-network/internal/payload"
 	auction_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/auction_bid_v1"
 	plaintext_v1 "github.com/zmlAEQ/Aequa-network/internal/payload/plaintext_v1"
@@ -38,13 +39,14 @@ func main() {
 		enableBeast    bool
 		enableJSON     bool
 		beastConf      string
-		enableBuilder   bool
-		builderMaxN     int
-		builderWindow   int
-		builderMinBid   uint64
-		builderMinFee   uint64
-		builderTicksMs  int
-		builderUseDFBA  bool
+		enableBuilder  bool
+		builderMaxN    int
+		builderWindow  int
+		builderMinBid  uint64
+		builderMinFee  uint64
+		builderTicksMs int
+		builderUseDFBA bool
+		beastThreshold bool
 	)
 	flag.StringVar(&apiAddr, "validator-api", "127.0.0.1:4600", "Validator API listen address")
 	flag.StringVar(&monAddr, "monitoring", "127.0.0.1:4620", "Monitoring listen address")
@@ -122,6 +124,7 @@ func main() {
 			}
 			if beastConf != "" {
 				if conf, err := private_v1.LoadConfig(beastConf); err == nil {
+					beastThreshold = conf.Mode == "threshold" || conf.Threshold > 0
 					if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
 						logger.InfoJ("beast_config", map[string]any{"result": "skip", "reason": err.Error()})
 					} else {
@@ -168,6 +171,16 @@ func main() {
 			t.OnQBFT(func(m qbft.Message) {
 				b.Publish(ctx, bus.Event{Kind: bus.KindConsensus, Height: m.Height, Round: m.Round, Body: m, TraceID: m.TraceID})
 			})
+			if enableBeast && beastThreshold {
+				if bst, ok := t.(p2p.BeastShareTransport); ok {
+					private_v1.SetThresholdSharePublisher(func(ctx context.Context, height uint64, index int, share []byte) error {
+						return bst.BroadcastBeastShare(ctx, wire.BeastShare{Height: height, Index: index, Share: share})
+					})
+					bst.OnBeastShare(func(m wire.BeastShare) {
+						private_v1.HandleThresholdShare(m.Height, m.Index, m.Share)
+					})
+				}
+			}
 			// ensure graceful stop with lifecycle: wrap and add
 			m.Add(p2p.NewNetService(t))
 			// Optionally allow API to broadcast tx when enabled.

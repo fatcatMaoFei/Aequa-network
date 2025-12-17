@@ -74,6 +74,9 @@ func (p *Pool) Add(pl payload.Payload) error {
 		p.seen[h] = struct{}{}
 		metrics.Inc("private_pool_in_total", map[string]string{"result": "ok"})
 		metrics.SetGauge("private_pool_size", nil, int64(len(p.items)))
+		// Best-effort: precompute and publish the per-height threshold share to
+		// reduce decrypt latency at TargetHeight (no-op without blst/threshold).
+		maybeEnsureShare(tx.TargetHeight)
 		return nil
 	}
 	return nil
