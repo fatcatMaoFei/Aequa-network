@@ -9,7 +9,7 @@ Language · 语言
 
 Introduction
 - Aequa is a production‑minded, modular Distributed Validator (DVT) sequencer. The core includes API, P2P, QBFT consensus, and StateDB. Optional components (behind feature flags, default off) include TSS, a pluggable mempool, and a deterministic payload builder. Observability and CI/security gates are first‑class with a strict “zero label drift” policy.
-- Out of scope for now (under active development): BEAST/MEV, DFBA. They will be integrated later behind flags without changing existing metric/log label sets.
+- BEAST/MEV and DFBA are implemented behind feature flags. They remain off by default and can be enabled per‑environment without changing existing metric/log label sets.
 
 Vision
 - Deliver a reliable, observable, security‑gated DVT engine that is easy to gray‑roll out and roll back. Defaults are safe: experimental features are off; compatibility and metrics/logging stability are prioritized for long‑run operations and audits.
@@ -48,8 +48,18 @@ How To Test Voting (e2e + adversary‑agent)
 
 Deployment
   - Native binary: `go build -o bin/dvt-node ./cmd/dvt-node` then run `./bin/dvt-node --validator-api 0.0.0.0:4600 --monitoring 0.0.0.0:4620`
-    - Enable deterministic builder (experimental, behind flag): add `--enable-builder` and optional `--builder.*` flags (see `cmd/dvt-node`).
-    - Optional DFBA path (experimental): add `--builder.use-dfba` when builder is enabled to route selection through the DFBA solver.
+    - Enable deterministic builder (behind flag): add `--enable-builder` and optional `--builder.*` flags (see `cmd/dvt-node`).
+    - Enable DFBA path: add `--builder.use-dfba` when builder is enabled to route selection through the DFBA solver.
+    - Enable BEAST private tx path (symmetric or threshold IBE/batched):
+      - `--enable-beast` (plus `AEQUA_ENABLE_BEAST=1` for API ingress).
+      - `--beast.conf beast-node-<i>.json` from `cmd/beast-keygen` (mode `threshold` or `batched`).
+    - Enable full BEAST/tBLS + DFBA (DKG + batched BTE+PPRF) on a multi‑node cluster:
+      - Build with tags `p2p,blst`.
+      - Start each node with:
+        - `--enable-beast`
+        - `--p2p.enable` (and `--p2p.listen` / `--p2p.bootnodes` as needed)
+        - `--beast.dkg.conf <path>` (per‑node DKG config under `internal/tss/dkg`)
+        - optional `--enable-builder --builder.use-dfba` to route decrypted flows through DFBA.
   - Docker (4‑node minimal): `docker build -t aequa-local:latest . && docker compose -f deploy/testnet/docker-compose.yml up -d`
   - Grafana: import `deploy/testnet/grafana/dashboard.json`; alert suggestions in `deploy/testnet/grafana/alerts.md`. DFBA and BEAST experiments surface additional panels for `dfba_*`, `block_value_*`, `beast_decrypt_total`, `private_pool_in_total`, and `private_pool_size` when the corresponding flags are enabled.
 

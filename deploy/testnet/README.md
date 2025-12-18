@@ -1,7 +1,7 @@
 Aequa Testnet (Minimal 4-node)
 
-Local-only helper for spinning up a minimal 4-node cluster without BEAST/DFBA.
-Features remain off by default; metrics/logs dimensions stay unchanged.
+Local-only helper for spinning up a minimal 4-node cluster. By default BEAST/DFBA
+remain off; metrics/logs dimensions stay unchanged when you enable them via flags.
 
 Quick start
 
@@ -21,7 +21,8 @@ Quick start
 Notes
 
 - This setup does not enable TSS/BEAST/DFBA by default. It is meant for public testnet
-  onboarding and basic observability only.
+  onboarding and basic observability only. You can opt into DFBA/BEAST experiments with
+  extra flags described below without changing existing metric/log dimensions.
 - For chaos/adversary tests, prefer the root-level docker-compose.yml.
 - Keep this file local-only; do not modify metrics/logging dimensions.
 
@@ -42,10 +43,20 @@ Experimental: BEAST threshold mode (DKG + batched decrypt shares)
   - `--enable-beast`
   - `--p2p.enable` (+ `--p2p.listen` / `--p2p.bootnodes`)
   - `--beast.dkg.conf <path>` (per-node JSON config; contains committee pubkeys and node-specific privkeys)
+  - optionally `--enable-builder --builder.use-dfba` to route decrypted flows through DFBA.
+- Behaviour (full BEAST/t-of-n batched decrypt):
+  - DKG derives a t-of-n BLS381 master key and per-node shares.
+  - Private `private_v1` txs are encrypted with BTE+PPRF (via `cmd/beast-encrypt` or JS helper),
+    carrying `ciphertext`, `ephemeral_key=C1||C2`, `target_height`, `batch_index`, and `punctured_key`.
+  - At `height >= target_height`, each node computes a partial decrypt share `C1^{s_i}` and gossips
+    it over `aequa/beast/share/v1`; when >=threshold shares are collected, nodes recover `g^k` and
+    the PPRF output, then map back into plaintext/auction flows.
 - Observability:
   - DKG: `beast_dkg_total{result}` (e.g. `ok`, `epoch_bump`, `dealer_disqualified`)
   - Decrypt path: `beast_decrypt_total{result}` (e.g. `ok`, `not_ready`, `early`, `cipher_error`)
-- Safety: share precompute on private tx ingest is disabled by default; do not enable early share publishing on public testnets.
+  - Private pool: `private_pool_in_total{result}`, `private_pool_size`
+- Safety: share precompute on private tx ingest is disabled by default; do not enable early share
+  publishing on public testnets.
 
 Experimental: deterministic builder + DFBA
 
