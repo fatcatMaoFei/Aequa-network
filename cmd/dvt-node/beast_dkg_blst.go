@@ -55,11 +55,12 @@ func maybeStartBeastDKG(ctx context.Context, t p2p.Transport, confPath string) {
 			case <-tick.C:
 				if res, ok := r.Result(); ok {
 					conf := private_v1.Config{
-						Mode:        "threshold",
+						Mode:        "batched",
 						GroupPubKey: append([]byte(nil), res.GroupPubKey...),
 						Threshold:   cfg.Threshold,
 						Index:       cfg.Index,
 						Share:       append([]byte(nil), res.ShareScalar...),
+						BatchN:      cfg.N,
 					}
 					if err := private_v1.EnableBLSTDecrypt(conf); err != nil {
 						logger.InfoJ("beast_dkg", map[string]any{"result": "decrypt_enable_error", "err": err.Error()})
