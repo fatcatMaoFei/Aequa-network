@@ -142,19 +142,19 @@ func (t *Libp2pTransport) Start(ctx context.Context) error {
 
 func (t *Libp2pTransport) Stop(ctx context.Context) error {
 	if t.subQ != nil {
-		_ = t.subQ.Cancel()
+		t.subQ.Cancel()
 	}
 	if t.subTx != nil {
-		_ = t.subTx.Cancel()
+		t.subTx.Cancel()
 	}
 	if t.subTxPriv != nil {
-		_ = t.subTxPriv.Cancel()
+		t.subTxPriv.Cancel()
 	}
 	if t.subShare != nil {
-		_ = t.subShare.Cancel()
+		t.subShare.Cancel()
 	}
 	if t.subDKG != nil {
-		_ = t.subDKG.Cancel()
+		t.subDKG.Cancel()
 	}
 	if t.tq != nil {
 		_ = t.tq.Close()
