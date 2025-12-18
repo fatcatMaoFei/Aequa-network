@@ -18,6 +18,9 @@ type PrivateTx struct {
 	Ciphertext   []byte
 	EphemeralKey []byte
 	TargetHeight uint64
+	// Optional batched BEAST fields (used when Mode=="batched").
+	BatchIndex   uint64
+	PuncturedKey []byte
 	h            []byte // cached hash
 }
 

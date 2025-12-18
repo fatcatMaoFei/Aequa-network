@@ -13,6 +13,8 @@ export interface TxEnvelope {
   ciphertext?: string; // base64
   ephemeral_key?: string; // base64
   target_height?: number;
+   batch_index?: number;
+   punctured_key?: string; // base64
   sig?: string; // base64
 }
 

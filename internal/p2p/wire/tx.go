@@ -31,6 +31,8 @@ type TxEnvelope struct {
 	Ciphertext   []byte `json:"ciphertext,omitempty"`
 	EphemeralKey []byte `json:"ephemeral_key,omitempty"`
 	TargetHeight uint64 `json:"target_height,omitempty"`
+	BatchIndex   uint64 `json:"batch_index,omitempty"`
+	PuncturedKey []byte `json:"punctured_key,omitempty"`
 	Sig          []byte `json:"sig,omitempty"`
 }
 
@@ -73,6 +75,8 @@ func TxFromInternal(pl payload.Payload) (TxEnvelope, bool) {
 			Ciphertext:   tx.Ciphertext,
 			EphemeralKey: tx.EphemeralKey,
 			TargetHeight: tx.TargetHeight,
+			BatchIndex:   tx.BatchIndex,
+			PuncturedKey: tx.PuncturedKey,
 		}, true
 	default:
 		return TxEnvelope{}, false
@@ -109,6 +113,8 @@ func (w TxEnvelope) ToInternal() payload.Payload {
 			Ciphertext:   w.Ciphertext,
 			EphemeralKey: w.EphemeralKey,
 			TargetHeight: w.TargetHeight,
+			BatchIndex:   w.BatchIndex,
+			PuncturedKey: w.PuncturedKey,
 		}
 	default:
 		return nil

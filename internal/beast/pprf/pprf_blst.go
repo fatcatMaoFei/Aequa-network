@@ -4,6 +4,7 @@ package pprf
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"io"
 
@@ -62,29 +63,25 @@ func SetupLinear(n int) (LinearParams, error) {
 	if err != nil {
 		return LinearParams{}, err
 	}
-	maxPow := 2*n + 1
-	g1Pows := make([][]byte, maxPow+1)
-	g2Pows := make([][]byte, maxPow+1)
-	pow := *x
-	for i := 1; i <= maxPow; i++ {
-		if i > 1 {
-			if _, ok := (&pow).MulAssign(x); !ok {
-				return LinearParams{}, ErrInvalidParams
-			}
-		}
-		if i == n+1 {
-			continue
-		}
-		g1 := blst.P1Generator().Mult(&pow)
-		g1Pows[i] = g1.ToAffine().Compress()
-		g2 := blst.P2Generator().Mult(&pow)
-		g2Pows[i] = g2.ToAffine().Compress()
+	return buildLinearParams(n, x)
+}
+
+// SetupLinearDeterministic derives public parameters for a bounded domain
+// [1..n] using a deterministic seed. The same (n, seed) pair yields the same
+// parameters across processes, which is convenient for config-free setup.
+func SetupLinearDeterministic(n int, seed []byte) (LinearParams, error) {
+	if n <= 0 {
+		return LinearParams{}, ErrInvalidParams
 	}
-	pp := LinearParams{N: n, G1Pows: g1Pows, G2Pows: g2Pows}
-	if err := pp.validate(); err != nil {
-		return LinearParams{}, err
+	if len(seed) == 0 {
+		return LinearParams{}, ErrInvalidParams
 	}
-	return pp, nil
+	h := sha256.Sum256(seed)
+	s := blst.KeyGen(h[:])
+	if s == nil {
+		return LinearParams{}, ErrInvalidKey
+	}
+	return buildLinearParams(n, s)
 }
 
 // KeyGen samples a fresh PRF key k ∈ Fr and returns it as 32-byte big-endian
@@ -255,4 +252,33 @@ func randScalar() (*blst.Scalar, error) {
 		return nil, ErrInvalidKey
 	}
 	return s, nil
+}
+
+func buildLinearParams(n int, x *blst.Scalar) (LinearParams, error) {
+	if n <= 0 || x == nil {
+		return LinearParams{}, ErrInvalidParams
+	}
+	maxPow := 2*n + 1
+	g1Pows := make([][]byte, maxPow+1)
+	g2Pows := make([][]byte, maxPow+1)
+	pow := *x
+	for i := 1; i <= maxPow; i++ {
+		if i > 1 {
+			if _, ok := (&pow).MulAssign(x); !ok {
+				return LinearParams{}, ErrInvalidParams
+			}
+		}
+		if i == n+1 {
+			continue
+		}
+		g1 := blst.P1Generator().Mult(&pow)
+		g1Pows[i] = g1.ToAffine().Compress()
+		g2 := blst.P2Generator().Mult(&pow)
+		g2Pows[i] = g2.ToAffine().Compress()
+	}
+	pp := LinearParams{N: n, G1Pows: g1Pows, G2Pows: g2Pows}
+	if err := pp.validate(); err != nil {
+		return LinearParams{}, err
+	}
+	return pp, nil
 }
