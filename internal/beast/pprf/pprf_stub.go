@@ -12,6 +12,8 @@ type LinearParams struct {
 	G2Pows [][]byte
 }
 
+func (LinearParams) Validate() error { return ErrNotSupported }
+
 func SetupLinear(_ int) (LinearParams, error) { return LinearParams{}, ErrNotSupported }
 func KeyGen() ([]byte, error)                 { return nil, ErrNotSupported }
 func AddKeys(_ ...[]byte) ([]byte, error)     { return nil, ErrNotSupported }

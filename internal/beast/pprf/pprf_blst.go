@@ -49,6 +49,9 @@ func (p LinearParams) validate() error {
 	return nil
 }
 
+// Validate checks that params match the expected shape for the linear setup.
+func (p LinearParams) Validate() error { return p.validate() }
+
 // SetupLinear generates public parameters for a bounded domain [1..n] using the
 // Linear Setup construction. The parameters are public and can be shared.
 func SetupLinear(n int) (LinearParams, error) {
