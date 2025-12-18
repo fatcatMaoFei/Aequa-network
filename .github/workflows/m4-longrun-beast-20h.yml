@@ -1,0 +1,170 @@
+name: m4-longrun-beast-20h
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m4-longrun-beast-20h-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.24"
+  CHUNK_MIN: "1200" # 1200 minutes ≈ 20 hours
+
+jobs:
+  beast-longrun-20h:
+    name: beast-longrun-20h (p2p+blst+dkg+dfba)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1220
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build node image (e2e,p2p,blst)
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker --version
+          docker build \
+            --build-arg BUILD_TAGS=e2e,p2p,blst \
+            --build-arg CGO_ENABLED=1 \
+            -t aequa-local:latest .
+
+      - name: Generate BEAST DKG configs (4 nodes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .github/tmp/beast-dkg/config
+          go run ./.github/scripts/gen-beast-dkg-config.go \
+            --out-dir .github/tmp/beast-dkg/config \
+            --session-id "m4-20h-${{ github.run_id }}" \
+            --epoch 1 \
+            --n 4 \
+            --threshold 3 \
+            --keyshare-path /data/tss_keyshare.dat \
+            --session-dir /data/beast_dkg
+
+      - name: Start 4-node cluster (node0 bootnode, DFBA+BEAST)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker network create aequa-net >/dev/null 2>&1 || true
+          for i in 0 1 2 3; do docker volume create aequa-node-$i-data >/dev/null; done
+
+          CFG_DIR="$PWD/.github/tmp/beast-dkg/config"
+
+          docker run -d --name aequa-node-0 --network aequa-net --network-alias aequa-node-0 \
+            -p 4600:4600 -p 4620:4620 \
+            -v "$CFG_DIR:/dkg:ro" -v aequa-node-0-data:/data \
+            -e AEQUA_ENABLE_TX_API=1 \
+            aequa-local:latest \
+              --validator-api 0.0.0.0:4600 \
+              --monitoring 0.0.0.0:4620 \
+              --enable-beast \
+              --enable-builder \
+              --builder.use-dfba \
+              --p2p.enable \
+              --p2p.listen /ip4/0.0.0.0/tcp/31000 \
+              --beast.dkg.conf /dkg/node1.json
+
+          echo "Waiting for bootnode peer id..."
+          SELF_ID=""
+          for i in $(seq 1 60); do
+            line="$(docker logs aequa-node-0 2>&1 | grep -m1 'p2p_addr' || true)"
+            if [ -n "$line" ]; then
+              SELF_ID="$(echo "$line" | sed -n 's/.*\"self_id\":\"\([^\"]*\)\".*/\1/p')"
+              if [ -n "$SELF_ID" ]; then break; fi
+            fi
+            sleep 1
+          done
+          test -n "$SELF_ID" || (echo "::error::bootnode self_id not found"; exit 1)
+          BOOTNODE="/dns4/aequa-node-0/tcp/31000/p2p/${SELF_ID}"
+          echo "BOOTNODE=$BOOTNODE"
+
+          for idx in 1 2 3; do
+            host_api=$((4600+idx))
+            host_metrics=$((4620+idx))
+            cfg="/dkg/node$((idx+1)).json"
+            docker run -d --name aequa-node-$idx --network aequa-net --network-alias aequa-node-$idx \
+              -p ${host_api}:4600 -p ${host_metrics}:4620 \
+              -v "$CFG_DIR:/dkg:ro" -v aequa-node-$idx-data:/data \
+              -e AEQUA_ENABLE_TX_API=1 \
+              aequa-local:latest \
+                --validator-api 0.0.0.0:4600 \
+                --monitoring 0.0.0.0:4620 \
+                --enable-beast \
+                --enable-builder \
+                --builder.use-dfba \
+                --p2p.enable \
+                --p2p.listen /ip4/0.0.0.0/tcp/31000 \
+                --p2p.bootnodes "$BOOTNODE" \
+                --beast.dkg.conf "$cfg"
+          done
+
+          export WAIT_SECS=120
+          bash ./.github/scripts/m4-health-check.sh
+
+          echo "Waiting for DKG group_pubkey_b64..."
+          GPK=""
+          for i in $(seq 1 120); do
+            line="$(docker logs aequa-node-0 2>&1 | grep -m1 'group_pubkey_b64' || true)"
+            if [ -n "$line" ]; then
+              GPK="$(echo "$line" | sed -n 's/.*\"group_pubkey_b64\":\"\([^\"]*\)\".*/\1/p')"
+              if [ -n "$GPK" ]; then break; fi
+            fi
+            sleep 1
+          done
+          test -n "$GPK" || (echo "::error::group_pubkey_b64 not found"; exit 1)
+          echo "BEAST_GROUP_PUBKEY_B64=$GPK" >> $GITHUB_ENV
+
+      - name: Run attacker + churn (20h DFBA+BEAST)
+        shell: bash
+        run: |
+          set -euo pipefail
+          minutes=${CHUNK_MIN}
+          end=$(( $(date +%s) + minutes*60 ))
+
+          export ATTACK_BEAST=1
+          export BEAST_GROUP_PUBKEY_B64="${BEAST_GROUP_PUBKEY_B64}"
+          export ENDPOINTS_TX="http://127.0.0.1:4600,http://127.0.0.1:4601,http://127.0.0.1:4602,http://127.0.0.1:4603"
+          export ENDPOINTS_DUTY="${ENDPOINTS_TX}"
+
+          timeout ${CHUNK_MIN}m env CGO_ENABLED=1 go run -tags blst ./test/attacker > attacker.out 2>&1 & echo $! > attacker.pid
+          : > beast-longrun-20h.out
+
+          while [ $(date +%s) -lt $end ]; do
+            for i in 0 1 2 3; do
+              curl -fsS localhost:$((4620+i))/metrics >/dev/null || echo "metrics fail on node $i" | tee -a beast-longrun-20h.out
+            done
+            ok=$(curl -fsS localhost:4620/metrics | grep 'beast_decrypt_total{result=\"ok\"}' | awk '{print $2}' | tail -n1 || true)
+            echo "$(date -Is) beast_decrypt_ok=${ok:-0}" | tee -a beast-longrun-20h.out
+            n=$(( (RANDOM % 3) + 1 ))
+            docker restart aequa-node-$n >/dev/null 2>&1 || true
+            sleep 15
+          done
+
+      - name: Collect logs & cleanup
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [ -f attacker.pid ]; then kill $(cat attacker.pid) 2>/dev/null || true; fi
+          for c in aequa-node-0 aequa-node-1 aequa-node-2 aequa-node-3; do docker logs $c --since 24h || true; done | tee node.out
+          cat attacker.out >> node.out || true
+          cat beast-longrun-20h.out >> node.out || true
+          docker rm -f aequa-node-0 aequa-node-1 aequa-node-2 aequa-node-3 >/dev/null 2>&1 || true
+          docker network rm aequa-net >/dev/null 2>&1 || true
+          for i in 0 1 2 3; do docker volume rm aequa-node-$i-data >/dev/null 2>&1 || true; done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: beast-longrun-20h-logs
+          path: node.out
+
