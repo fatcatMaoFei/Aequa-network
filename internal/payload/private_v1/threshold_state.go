@@ -21,6 +21,12 @@ var (
 	sharesByHeight  = map[uint64]map[int][]byte{}
 	sentHeights     = map[uint64]struct{}{}
 	privKeyByHeight = map[uint64][]byte{}
+
+	// Batched BEAST share state: per-height, per-batch index partial decrypt
+	// shares (C1^{s_i}) in compressed G1 form. These are used only when
+	// Config.Mode=="batched" and allow multi-party threshold recovery of
+	// g^k for each batch index.
+	batchSharesByHeight = map[uint64]map[uint64]map[int][]byte{}
 )
 
 func enableThreshold(index, k int, share []byte) {
@@ -87,6 +93,30 @@ func recordLocalShare(height uint64, index int, share []byte) {
 	m[index] = append([]byte(nil), share...)
 }
 
+// recordBatchedShare records a per-height, per-batch partial decrypt share
+// for the given participant index. It expects a compressed G1 share (48 bytes).
+func recordBatchedShare(height uint64, batch uint64, index int, share []byte) {
+	if height == 0 || batch == 0 || index <= 0 || len(share) != 48 {
+		return
+	}
+	threshMu.Lock()
+	defer threshMu.Unlock()
+	hm := batchSharesByHeight[height]
+	if hm == nil {
+		hm = map[uint64]map[int][]byte{}
+		batchSharesByHeight[height] = hm
+	}
+	bm := hm[batch]
+	if bm == nil {
+		bm = map[int][]byte{}
+		hm[batch] = bm
+	}
+	if _, exists := bm[index]; exists {
+		return
+	}
+	bm[index] = append([]byte(nil), share...)
+}
+
 func getShare(height uint64, index int) []byte {
 	threshMu.Lock()
 	defer threshMu.Unlock()
@@ -104,6 +134,26 @@ func snapshotShares(height uint64) map[int][]byte {
 	threshMu.Lock()
 	defer threshMu.Unlock()
 	src := sharesByHeight[height]
+	if len(src) == 0 {
+		return nil
+	}
+	cp := make(map[int][]byte, len(src))
+	for k, v := range src {
+		cp[k] = append([]byte(nil), v...)
+	}
+	return cp
+}
+
+// snapshotBatchedShares returns a copy of all partial decrypt shares for the
+// given height and batch index. The map keys are participant indices.
+func snapshotBatchedShares(height uint64, batch uint64) map[int][]byte {
+	threshMu.Lock()
+	defer threshMu.Unlock()
+	hm := batchSharesByHeight[height]
+	if len(hm) == 0 {
+		return nil
+	}
+	src := hm[batch]
 	if len(src) == 0 {
 		return nil
 	}
