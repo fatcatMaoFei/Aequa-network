@@ -3,6 +3,7 @@
 package private_v1
 
 import (
+	"context"
 	"errors"
 
 	"github.com/zmlAEQ/Aequa-network/internal/beast"
@@ -124,11 +125,32 @@ func decryptBatched(conf Config, tx *PrivateTx) (payload.Payload, error) {
 		C1: append([]byte(nil), tx.EphemeralKey[:48]...),
 		C2: append([]byte(nil), tx.EphemeralKey[48:]...),
 	}
+	// Compute and locally record our partial decrypt share; this will be
+	// gossiped via P2P when BEAST share publisher is configured.
 	sh, err := bte.PartialDecrypt(ct, conf.Share, conf.Index)
 	if err != nil {
 		return nil, payload.ErrPrivateCipher
 	}
-	gk, err := bte.DecryptKeyG(ct, []bte.PartialDecryptShare{sh}, 1)
+	recordBatchedShare(tx.TargetHeight, tx.BatchIndex, sh.Index, sh.Share)
+	enabled, _, _, _, pub := thresholdParams()
+	if enabled && pub != nil && markShareSent(tx.TargetHeight) {
+		// For batched flows we multiplex shares by batch index at the same
+		// height via the payload.Ciphertext/BatchIndex; the wire message
+		// remains generic to avoid metric/log drift.
+		_ = pub(context.Background(), tx.TargetHeight, sh.Index, sh.Share)
+	}
+
+	// Collect t out-of-n partial decrypt shares for this (height,batch)
+	// and recover g^k via BTE's threshold combine.
+	shared := snapshotBatchedShares(tx.TargetHeight, tx.BatchIndex)
+	if len(shared) < conf.Threshold {
+		return nil, payload.ErrPrivateNotReady
+	}
+	shares := make([]bte.PartialDecryptShare, 0, len(shared))
+	for idx, val := range shared {
+		shares = append(shares, bte.PartialDecryptShare{Index: idx, Share: append([]byte(nil), val...)})
+	}
+	gk, err := bte.DecryptKeyG(ct, shares, conf.Threshold)
 	if err != nil {
 		return nil, payload.ErrPrivateCipher
 	}
