@@ -12,13 +12,13 @@ concurrency:
 
 env:
   GO_VERSION: '1.24'
-  CHUNK_MIN: '60'
+  CHUNK_MIN: '300'
 
 jobs:
   beast-threshold:
     name: beast-threshold (p2p+blst+dkg)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 320
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
