@@ -18,6 +18,9 @@ func AddKeys(_ ...[]byte) ([]byte, error)     { return nil, ErrNotSupported }
 func Eval(_ LinearParams, _ []byte, _ int) ([]byte, error) {
 	return nil, ErrNotSupported
 }
+func EvalFromGK(_ LinearParams, _ []byte, _ int) ([]byte, error) {
+	return nil, ErrNotSupported
+}
 func Puncture(_ LinearParams, _ []byte, _ int) ([]byte, error) {
 	return nil, ErrNotSupported
 }

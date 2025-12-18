@@ -153,6 +153,33 @@ func Eval(pp LinearParams, key []byte, i int) ([]byte, error) {
 	return gt.ToBendian(), nil
 }
 
+// EvalFromGK computes PRF(pp, k, i) given g1^k (compressed G1 element), without
+// requiring the scalar k. This is convenient when the key is recovered via
+// exponent-only threshold decryption (i.e., learning g^k but not k).
+func EvalFromGK(pp LinearParams, gk []byte, i int) ([]byte, error) {
+	if err := pp.validate(); err != nil {
+		return nil, err
+	}
+	if i <= 0 || i > pp.N {
+		return nil, ErrInvalidParams
+	}
+	if len(gk) != 48 {
+		return nil, ErrInvalidKey
+	}
+	var gkAff blst.P1Affine
+	if gkAff.Uncompress(gk) == nil {
+		return nil, ErrInvalidKey
+	}
+	exp := pp.N + 1 + i
+	var p2Aff blst.P2Affine
+	if p2Aff.Uncompress(pp.G2Pows[exp]) == nil {
+		return nil, ErrInvalidParams
+	}
+	gt := blst.Fp12MillerLoop(&p2Aff, &gkAff)
+	gt.FinalExp()
+	return gt.ToBendian(), nil
+}
+
 // Puncture computes k* = g1^{x^{i*}·k} for i* ∈ [1..N]. The output is a
 // compressed G1 element (48 bytes).
 func Puncture(pp LinearParams, key []byte, iStar int) ([]byte, error) {

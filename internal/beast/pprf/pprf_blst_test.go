@@ -88,6 +88,34 @@ func TestLinearPPRF_KeyHomomorphic(t *testing.T) {
 	}
 }
 
+func TestLinearPPRF_EvalFromGKMatchesEval(t *testing.T) {
+	pp, err := SetupLinear(8)
+	if err != nil {
+		t.Fatalf("SetupLinear: %v", err)
+	}
+	k, err := KeyGen()
+	if err != nil {
+		t.Fatalf("KeyGen: %v", err)
+	}
+	var sk blst.Scalar
+	if sk.Deserialize(k) == nil {
+		t.Fatalf("Deserialize(k)")
+	}
+	gk := blst.P1Generator().Mult(&sk).ToAffine().Compress()
+	i := 4
+	y1, err := Eval(pp, k, i)
+	if err != nil {
+		t.Fatalf("Eval: %v", err)
+	}
+	y2, err := EvalFromGK(pp, gk, i)
+	if err != nil {
+		t.Fatalf("EvalFromGK: %v", err)
+	}
+	if !bytes.Equal(y1, y2) {
+		t.Fatalf("EvalFromGK mismatch")
+	}
+}
+
 func mulG1(base []byte, scalar []byte) ([]byte, error) {
 	if len(base) != 48 || len(scalar) != 32 {
 		return nil, ErrInvalidParams
