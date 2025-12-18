@@ -22,6 +22,7 @@ type nodeConfig struct {
 	Threshold   int    `json:"threshold"`
 	Index       int    `json:"index"`
 	Share       []byte `json:"share"`
+	BatchN      int    `json:"batch_n,omitempty"`
 }
 
 type publicConfig struct {
@@ -88,6 +89,7 @@ func main() {
 			Threshold:   t,
 			Index:       i,
 			Share:       share.Serialize(),
+			BatchN:      n,
 		}
 		path := filepath.Join(out, fmt.Sprintf("beast-node-%d.json", i))
 		if err := writeJSON(path, cfg); err != nil {

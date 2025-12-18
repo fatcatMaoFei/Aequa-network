@@ -1,6 +1,10 @@
+//go:build !blst
+
 package private_v1
 
 import (
+	"encoding/base64"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,7 +30,8 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 func TestLoadConfig_OK(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cfg.json")
-	body := `{"group_pubkey":"AQID","committee":["BAUG"]}`
+	gpk := base64.StdEncoding.EncodeToString(make([]byte, 48))
+	body := fmt.Sprintf(`{"group_pubkey":"%s","committee":["BAUG"]}`, gpk)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
